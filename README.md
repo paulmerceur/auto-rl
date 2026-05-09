@@ -19,7 +19,7 @@ This repository is being built in small phases:
 6. Minimal closed-loop controller.
 7. Documentation polish and example outputs.
 
-Phase 0 and Phase 1 are the only implemented phases at this point.
+Phase 0 through Phase 2 are implemented at this point.
 
 ## Setup
 
@@ -33,6 +33,26 @@ python -m pip install -e ".[dev]"
 
 Copy `.env.example` to `.env` locally and set `OPENROUTER_API_KEY` before using real
 LLM calls. `.env` is ignored by Git.
+
+## Manual PufferLib Run
+
+PufferLib 4.0 is not pinned from PyPI because the current workflow is source/Docker
+based. Install and build PufferLib using the current upstream instructions first.
+
+Smoke-test this tool's config handling without launching training:
+
+```bash
+PYTHONPATH=src python -m puffer_llm_sweeper run --config configs/base.yaml --dry-run
+```
+
+After PufferLib 4.0 is installed and the selected environment is built, launch one
+small training run:
+
+```bash
+PYTHONPATH=src python -m puffer_llm_sweeper run --config configs/base.yaml
+```
+
+Outputs are configured under ignored `runs/` subdirectories.
 
 ## Project Boundaries
 

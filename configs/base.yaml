@@ -1,0 +1,10 @@
+env_name: target
+output_dir: runs
+
+puffer:
+  checkpoint_dir: runs/checkpoints
+  log_dir: runs/logs
+  train:
+    total_timesteps: 100000
+  sweep:
+    downsample: 1
