@@ -64,6 +64,8 @@ class OpenRouterTests(unittest.TestCase):
         self.assertIn('"trials_remaining": 10', messages[1]["content"])
         self.assertIn('"train.ent_coef"', messages[1]["content"])
         self.assertIn("train.minibatch_size", messages[1]["content"])
+        self.assertIn("Integer-only keys", messages[1]["content"])
+        self.assertIn("policy.num_layers", messages[1]["content"])
         self.assertIn("Absolute search-space bounds", messages[1]["content"])
 
 

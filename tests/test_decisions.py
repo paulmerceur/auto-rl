@@ -103,6 +103,43 @@ class DecisionTests(unittest.TestCase):
 
         self.assertEqual(decision.search_space_update["train.minibatch_size"].max, 65536)
 
+    def test_rejects_float_distribution_for_integer_key(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_json(
+                {
+                    "action": "expand_search",
+                    "reason": "This would produce float layer counts.",
+                    "search_space_update": {
+                        "policy.num_layers": {
+                            "distribution": "uniform",
+                            "min": 1,
+                            "max": 8,
+                            "scale": "auto",
+                        }
+                    },
+                    "notes": [],
+                }
+            )
+
+    def test_accepts_int_distribution_for_integer_key(self) -> None:
+        decision = parse_decision_json(
+            {
+                "action": "expand_search",
+                "reason": "Try deeper policies.",
+                "search_space_update": {
+                    "policy.num_layers": {
+                        "distribution": "int_uniform",
+                        "min": 1,
+                        "max": 8,
+                        "scale": "auto",
+                    }
+                },
+                "notes": [],
+            }
+        )
+
+        self.assertEqual(decision.search_space_update["policy.num_layers"].distribution, "int_uniform")
+
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(

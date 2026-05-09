@@ -71,7 +71,18 @@ puffer:
         max: 16384
         scale: auto
       num_buffers:
-        distribution: uniform
+        distribution: int_uniform
+        min: 1
+        max: 8
+        scale: auto
+    policy:
+      hidden_size:
+        distribution: uniform_pow2
+        min: 32
+        max: 1024
+        scale: auto
+      num_layers:
+        distribution: int_uniform
         min: 1
         max: 8
         scale: auto

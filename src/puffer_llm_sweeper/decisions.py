@@ -18,6 +18,14 @@ class DecisionAction(StrEnum):
 
 MAX_SUGGESTED_TRIALS = 10
 
+INTEGER_SEARCH_KEYS = {
+    "policy.num_layers",
+    "train.horizon",
+    "train.minibatch_size",
+    "vec.num_buffers",
+    "vec.total_agents",
+}
+
 ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
     "train.learning_rate": (1e-6, 1.0),
     "train.ent_coef": (0.0, 1.0),
@@ -72,6 +80,14 @@ class LlmDecision(BaseModel):
             bounds = ALLOWED_SEARCH_BOUNDS.get(name)
             if bounds is None:
                 raise ValueError(f"Unsupported search-space key: {name}")
+            if name in INTEGER_SEARCH_KEYS and range_config.distribution not in {
+                "int_uniform",
+                "uniform_pow2",
+            }:
+                raise ValueError(
+                    f"{name} must use int_uniform or uniform_pow2, "
+                    f"got {range_config.distribution}"
+                )
             lower, upper = bounds
             if range_config.min < lower or range_config.max > upper:
                 raise ValueError(

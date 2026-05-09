@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from puffer_llm_sweeper.runner import _json_safe, load_run_config, merge_config, write_returned_logs
+from puffer_llm_sweeper.runner import _json_safe, build_puffer_args, load_run_config, merge_config, write_returned_logs
 
 
 class RunnerConfigTests(unittest.TestCase):
@@ -63,6 +63,40 @@ class RunnerConfigTests(unittest.TestCase):
 
     def test_json_safe_encodes_bytes(self) -> None:
         self.assertEqual(_json_safe({"nccl_id": b"\x00\xff"}), {"nccl_id": "00ff"})
+
+    def test_base_sweep_uses_integer_safe_distributions(self) -> None:
+        class FakePufferl:
+            @staticmethod
+            def load_config(env_name: str) -> dict:
+                self = FakePufferl
+                self.env_name = env_name
+                return {
+                    "sweep": {
+                        "policy": {
+                            "num_layers": {
+                                "distribution": "uniform",
+                                "min": 1,
+                                "max": 8,
+                                "scale": "auto",
+                            }
+                        },
+                        "vec": {
+                            "num_buffers": {
+                                "distribution": "uniform",
+                                "min": 1,
+                                "max": 8,
+                                "scale": "auto",
+                            }
+                        },
+                    },
+                    "train": {},
+                }
+
+        config = load_run_config(Path("configs/base.yaml"))
+        args = build_puffer_args(config, FakePufferl)
+
+        self.assertEqual(args["sweep"]["policy"]["num_layers"]["distribution"], "int_uniform")
+        self.assertEqual(args["sweep"]["vec"]["num_buffers"]["distribution"], "int_uniform")
 
 
 if __name__ == "__main__":

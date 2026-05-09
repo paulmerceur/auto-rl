@@ -11,7 +11,12 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
-from puffer_llm_sweeper.decisions import ALLOWED_SEARCH_BOUNDS, LlmDecision, parse_decision_json
+from puffer_llm_sweeper.decisions import (
+    ALLOWED_SEARCH_BOUNDS,
+    INTEGER_SEARCH_KEYS,
+    LlmDecision,
+    parse_decision_json,
+)
 
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -119,6 +124,8 @@ def build_decision_messages(
         f"Absolute search-space bounds:\n{json.dumps(_bounds_payload(), indent=2, sort_keys=True)}\n"
         "For log_normal and uniform_pow2, min must be greater than 0. For "
         "logit_normal, min and max must be within [0, 1), and min must be less than max.\n"
+        "Integer-only keys must use int_uniform or uniform_pow2. Integer-only keys are: "
+        f"{', '.join(sorted(INTEGER_SEARCH_KEYS))}.\n"
         "Example: "
         '{"action":"narrow_search","reason":"short explanation","suggested_trials":3,'
         '"search_space_update":{"train.learning_rate":{"distribution":"log_normal",'
