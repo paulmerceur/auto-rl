@@ -100,7 +100,7 @@ def build_decision_messages(summary: dict[str, Any]) -> list[dict[str, str]]:
         "search_space_update, notes.\n"
         "action must be one of: continue, narrow_search, expand_search, stop.\n"
         "search_space_update must be an object whose keys are only: learning_rate, "
-        "entropy_coef, gamma, clip_coef, vf_coef, max_grad_norm.\n"
+        "ent_coef, gamma, clip_coef, vf_coef, max_grad_norm.\n"
         "Each search_space_update value must be an object with numeric min, numeric "
         "max, and scale equal to linear or log. Do not nest keys under train/env. "
         "Do not output lists of candidate values.\n"

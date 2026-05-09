@@ -61,6 +61,30 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(payload["num_failures"], 0)
         self.assertEqual(payload["best_reward"], 1.0)
 
+    def test_parse_pufferlib_3_metric_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "cartpole" / "run-1.json"
+            log_path.parent.mkdir()
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "env_name": "cartpole",
+                        "metrics": {
+                            "environment/score": [10.0, 12.0],
+                            "losses/policy_loss": [0.5],
+                            "performance/update": [0.1],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = parse_log(log_path)
+
+        self.assertEqual(summary.final_reward, 12.0)
+        self.assertEqual(summary.best_reward, 12.0)
+        self.assertEqual(summary.ppo_metrics["losses/policy_loss"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

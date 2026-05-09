@@ -51,15 +51,17 @@ def parse_log(path: Path) -> RunSummary:
         metrics = {}
 
     env_name = _extract_env_name(raw)
-    target_metric = _target_metric_name(raw)
-    rewards = _number_series(metrics.get(target_metric))
+    rewards = _reward_series(raw, metrics)
     final_reward = _last_finite(rewards)
     best_reward = max(rewards) if rewards else None
 
     training_steps = _last_finite(_number_series(metrics.get("agent_steps")))
     wall_time = _last_finite(_number_series(metrics.get("uptime")))
     sps = _last_finite(_number_series(metrics.get("SPS")))
-    ppo_metrics = _final_prefixed_metrics(metrics, prefixes=("loss/", "perf/"))
+    ppo_metrics = _final_prefixed_metrics(
+        metrics,
+        prefixes=("loss/", "losses/", "perf/", "performance/"),
+    )
 
     failure_reason = _failure_reason(final_reward, metrics)
     return RunSummary(
@@ -104,6 +106,15 @@ def _target_metric_name(raw: JsonDict) -> str:
     return "env/score"
 
 
+def _reward_series(raw: JsonDict, metrics: JsonDict) -> list[float]:
+    candidates = [_target_metric_name(raw), "environment/score", "environment/reward"]
+    for name in candidates:
+        rewards = _number_series(metrics.get(name))
+        if rewards:
+            return rewards
+    return []
+
+
 def _number_series(value: Any) -> list[float]:
     if isinstance(value, list):
         raw_values = value
@@ -140,7 +151,7 @@ def _failure_reason(final_reward: float | None, metrics: JsonDict) -> str | None
     if final_reward is None:
         return "missing_reward_metric"
     for key, value in metrics.items():
-        if not isinstance(key, str) or not key.startswith("loss/"):
+        if not isinstance(key, str) or not key.startswith(("loss/", "losses/")):
             continue
         raw_values = value if isinstance(value, list) else [value]
         for item in raw_values:

@@ -44,8 +44,10 @@ LLM calls. `.env` is ignored by Git.
 
 ## Manual PufferLib Run
 
-PufferLib 4.0 is not pinned from PyPI because the current workflow is source/Docker
-based. Install and build PufferLib using the current upstream instructions first.
+The default config targets the PyPI PufferLib 3.0 package with a tiny CPU
+`puffer_cartpole` run. PufferLib 4.0 appears to use a newer source/Docker
+workflow, so this repo keeps the runner small and checks the installed package at
+runtime.
 
 Smoke-test this tool's config handling without launching training:
 
@@ -53,8 +55,7 @@ Smoke-test this tool's config handling without launching training:
 uv run python -m puffer_llm_sweeper run --config configs/base.yaml --dry-run
 ```
 
-After PufferLib 4.0 is installed and the selected environment is built, launch one
-small training run:
+After PufferLib is installed, launch one small training run:
 
 ```bash
 uv run python -m puffer_llm_sweeper run --config configs/base.yaml
@@ -120,8 +121,8 @@ uv run ruff check .
 
 ## Limitations
 
-- PufferLib 4.0 setup is local-machine dependent and may require CUDA/source
-  builds through the upstream PufferTank workflow.
+- PufferLib packaging is in flux: PyPI currently provides 3.0, while newer docs
+  reference a 4.0 source/Docker workflow.
 - The loop is intentionally conservative and small; it does not run large sweeps
   by default.
 - OpenRouter live calls are opt-in with `--live`; mock mode is the default.

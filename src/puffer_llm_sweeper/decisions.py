@@ -18,7 +18,7 @@ class DecisionAction(StrEnum):
 
 ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
     "learning_rate": (1e-6, 1.0),
-    "entropy_coef": (0.0, 1.0),
+    "ent_coef": (0.0, 1.0),
     "gamma": (0.0, 1.0),
     "clip_coef": (0.0, 1.0),
     "vf_coef": (0.0, 10.0),

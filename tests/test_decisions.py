@@ -21,6 +21,20 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(decision.action, DecisionAction.NARROW_SEARCH)
         self.assertEqual(decision.search_space_update["learning_rate"].scale, "log")
 
+    def test_accepts_pufferlib_3_entropy_name(self) -> None:
+        decision = parse_decision_json(
+            {
+                "action": "expand_search",
+                "reason": "Try more entropy.",
+                "search_space_update": {
+                    "ent_coef": {"min": 0.001, "max": 0.05, "scale": "log"}
+                },
+                "notes": [],
+            }
+        )
+
+        self.assertEqual(decision.search_space_update["ent_coef"].scale, "log")
+
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(

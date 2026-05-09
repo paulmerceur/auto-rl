@@ -13,7 +13,7 @@
           "learning_rate": 0.001
         }
       },
-      "env_name": "target",
+      "env_name": "puffer_cartpole",
       "failure": false,
       "failure_reason": null,
       "final_reward": 2.0,

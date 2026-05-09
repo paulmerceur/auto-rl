@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import sys
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -126,21 +128,38 @@ def _deep_update(target: ConfigDict, update: ConfigDict) -> None:
 
 
 def build_puffer_args(config: RunConfig, pufferl: Any) -> ConfigDict:
-    args = pufferl.load_config(config.env_name)
+    original_argv = sys.argv
+    try:
+        sys.argv = [original_argv[0]]
+        args = pufferl.load_config(config.env_name)
+    finally:
+        sys.argv = original_argv
     if not isinstance(args, dict):
         raise TypeError("pufferl.load_config returned an unexpected non-dict value.")
 
     args = merge_config(args, config.puffer_overrides)
     args.setdefault("checkpoint_dir", str(config.output_dir / "checkpoints"))
     args.setdefault("log_dir", str(config.output_dir / "logs"))
+    args.setdefault("train", {})
+    args["train"].setdefault("data_dir", str(config.output_dir / "pufferlib"))
     return args
 
 
 def ensure_output_dirs(args: ConfigDict) -> None:
+    for path in output_paths(args):
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def output_paths(args: ConfigDict) -> list[Path]:
+    paths: list[Path] = []
     for key in ("checkpoint_dir", "log_dir"):
         value = args.get(key)
         if isinstance(value, str) and value:
-            Path(value).mkdir(parents=True, exist_ok=True)
+            paths.append(Path(value))
+    train = args.get("train", {})
+    if isinstance(train, dict) and isinstance(train.get("data_dir"), str):
+        paths.append(Path(train["data_dir"]))
+    return paths
 
 
 def run_training(config_path: Path, dry_run: bool = False) -> int:
@@ -165,5 +184,34 @@ def run_training(config_path: Path, dry_run: bool = False) -> int:
 
     args = build_puffer_args(config, pufferl)
     ensure_output_dirs(args)
-    pufferl.train(config.env_name, args=args)
+    logs = pufferl.train(config.env_name, args=args)
+    write_returned_logs(config, args, logs)
     return 0
+
+
+def write_returned_logs(config: RunConfig, args: ConfigDict, logs: Any) -> Path:
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    output_path = config.output_dir / "logs" / config.env_name / f"{run_id}.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_id": run_id,
+        "env_name": config.env_name,
+        "config": args,
+        "metrics": _logs_to_metric_series(logs),
+    }
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return output_path
+
+
+def _logs_to_metric_series(logs: Any) -> ConfigDict:
+    if not isinstance(logs, list):
+        return {}
+
+    series: ConfigDict = {}
+    for row in logs:
+        if not isinstance(row, dict):
+            continue
+        for key, value in row.items():
+            if isinstance(value, int | float | str | bool) or value is None:
+                series.setdefault(str(key), []).append(value)
+    return series

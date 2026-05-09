@@ -1,10 +1,20 @@
-env_name: target
+env_name: puffer_cartpole
 output_dir: runs
 
 puffer:
-  checkpoint_dir: runs/checkpoints
-  log_dir: runs/logs
   train:
-    total_timesteps: 100000
+    data_dir: runs/pufferlib
+    device: cpu
+    total_timesteps: 4096
+    batch_size: 1024
+    minibatch_size: 256
+    bptt_horizon: 32
+    checkpoint_interval: 1
+  vec:
+    num_envs: 4
+    num_workers: 1
+    batch_size: 4
+  env:
+    num_envs: 4
   sweep:
     downsample: 1
