@@ -62,6 +62,9 @@ class OpenRouterTests(unittest.TestCase):
         self.assertIn("valid JSON only", messages[0]["content"])
         self.assertIn('"best_reward": 1.0', messages[1]["content"])
         self.assertIn('"trials_remaining": 10', messages[1]["content"])
+        self.assertIn('"train.ent_coef"', messages[1]["content"])
+        self.assertIn("train.minibatch_size", messages[1]["content"])
+        self.assertIn("Absolute search-space bounds", messages[1]["content"])
 
 
 if __name__ == "__main__":

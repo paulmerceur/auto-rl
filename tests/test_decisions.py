@@ -47,6 +47,62 @@ class DecisionTests(unittest.TestCase):
 
         self.assertEqual(decision.search_space_update["train.ent_coef"].distribution, "log_normal")
 
+    def test_accepts_zero_entropy_for_uniform_distribution(self) -> None:
+        decision = parse_decision_json(
+            {
+                "action": "expand_search",
+                "reason": "Allow disabling entropy regularization.",
+                "search_space_update": {
+                    "train.ent_coef": {
+                        "distribution": "uniform",
+                        "min": 0.0,
+                        "max": 0.1,
+                        "scale": "auto",
+                    }
+                },
+                "notes": [],
+            }
+        )
+
+        self.assertEqual(decision.search_space_update["train.ent_coef"].min, 0.0)
+
+    def test_rejects_zero_entropy_for_log_distribution(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_json(
+                {
+                    "action": "expand_search",
+                    "reason": "Invalid log range.",
+                    "search_space_update": {
+                        "train.ent_coef": {
+                            "distribution": "log_normal",
+                            "min": 0.0,
+                            "max": 0.1,
+                            "scale": "auto",
+                        }
+                    },
+                    "notes": [],
+                }
+            )
+
+    def test_accepts_minibatch_sweep_update(self) -> None:
+        decision = parse_decision_json(
+            {
+                "action": "expand_search",
+                "reason": "Try larger minibatches.",
+                "search_space_update": {
+                    "train.minibatch_size": {
+                        "distribution": "uniform_pow2",
+                        "min": 4096,
+                        "max": 65536,
+                        "scale": "auto",
+                    }
+                },
+                "notes": [],
+            }
+        )
+
+        self.assertEqual(decision.search_space_update["train.minibatch_size"].max, 65536)
+
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(

@@ -44,21 +44,24 @@ LLM calls. `.env` is ignored by Git.
 
 ## PufferLib Setup
 
-The default config targets PufferLib 4.0 with tiny CPU `cartpole` sweep batches.
-PufferLib 4.0 currently needs the GitHub source workflow rather than PyPI:
+The default config targets PufferLib 4.0 `cartpole` sweep batches using
+GPU-oriented Puffer defaults. PufferLib 4.0 currently needs the GitHub source
+workflow rather than PyPI.
+
+For GPU training, build PufferLib with CUDA support for the selected environment:
 
 ```bash
 git clone --branch 4.0 https://github.com/PufferAI/PufferLib.git .deps/PufferLib
 cd .deps/PufferLib
-CC=gcc CXX=g++ bash build.sh cartpole --cpu
+bash build.sh cartpole
 cd ../..
 uv pip install -e .deps/PufferLib
 ```
 
-On systems with `clang`, the `CC`/`CXX` override may not be needed. If using
-GPU/CUDA, use upstream PufferLib build instructions instead of `--cpu`.
-The default config sets `slowly: true`, which uses PufferLib's PyTorch backend
-with the CPU `_C` vector environment.
+If you only need a CPU smoke test, build with `CC=gcc CXX=g++ bash build.sh
+cartpole --cpu`. The default config sets `slowly: true`, which uses PufferLib's
+PyTorch backend; it will use CUDA when the `_C` backend was built with GPU
+support and CPU otherwise.
 
 Smoke-test this tool's config handling without launching training:
 

@@ -11,7 +11,7 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
-from puffer_llm_sweeper.decisions import LlmDecision, parse_decision_json
+from puffer_llm_sweeper.decisions import ALLOWED_SEARCH_BOUNDS, LlmDecision, parse_decision_json
 
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -111,13 +111,14 @@ def build_decision_messages(
         "suggested_trials must be an integer from 1 to 10. It is only a soft "
         "recommendation and may be clamped by hard budgets.\n"
         "search_space_update must be an object whose keys are only: "
-        "train.learning_rate, train.ent_coef, train.gamma, train.clip_coef, "
-        "train.vf_coef, train.max_grad_norm, train.total_timesteps, "
-        "vec.total_agents, policy.hidden_size, policy.num_layers.\n"
+        f"{', '.join(sorted(ALLOWED_SEARCH_BOUNDS))}.\n"
         "Each search_space_update value must be an object with numeric min, numeric "
         "max, distribution equal to uniform, int_uniform, uniform_pow2, log_normal, "
         "or logit_normal, and scale as a number, auto, or time. Do not output lists "
         "of candidate values.\n"
+        f"Absolute search-space bounds:\n{json.dumps(_bounds_payload(), indent=2, sort_keys=True)}\n"
+        "For log_normal and uniform_pow2, min must be greater than 0. For "
+        "logit_normal, min and max must be within [0, 1), and min must be less than max.\n"
         "Example: "
         '{"action":"narrow_search","reason":"short explanation","suggested_trials":3,'
         '"search_space_update":{"train.learning_rate":{"distribution":"log_normal",'
@@ -129,3 +130,10 @@ def build_decision_messages(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+
+def _bounds_payload() -> dict[str, dict[str, float]]:
+    return {
+        name: {"min": lower, "max": upper}
+        for name, (lower, upper) in ALLOWED_SEARCH_BOUNDS.items()
+    }

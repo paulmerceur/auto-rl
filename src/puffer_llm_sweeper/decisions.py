@@ -20,13 +20,16 @@ MAX_SUGGESTED_TRIALS = 10
 
 ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
     "train.learning_rate": (1e-6, 1.0),
-    "train.ent_coef": (1e-8, 1.0),
+    "train.ent_coef": (0.0, 1.0),
     "train.gamma": (0.0, 0.99999),
     "train.clip_coef": (0.0, 1.0),
     "train.vf_coef": (0.0, 10.0),
     "train.max_grad_norm": (0.0, 10.0),
-    "train.total_timesteps": (1_024, 10_000_000),
+    "train.total_timesteps": (1_024, 1_000_000_000),
+    "train.horizon": (8, 1_024),
+    "train.minibatch_size": (256, 262_144),
     "vec.total_agents": (1, 16_384),
+    "vec.num_buffers": (1, 16),
     "policy.hidden_size": (16, 2_048),
     "policy.num_layers": (1, 16),
 }
