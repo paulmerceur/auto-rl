@@ -1,0 +1,29 @@
+{
+  "best_reward": 2.5,
+  "num_failures": 0,
+  "num_runs": 2,
+  "runs": [
+    {
+      "best_reward": 2.5,
+      "config": {
+        "base": {
+          "env_name": "target"
+        },
+        "train": {
+          "learning_rate": 0.001
+        }
+      },
+      "env_name": "target",
+      "failure": false,
+      "failure_reason": null,
+      "final_reward": 2.0,
+      "ppo_metrics": {
+        "loss/policy": 0.2
+      },
+      "run_id": "example-run-1",
+      "sps": 2048.0,
+      "training_steps": 256.0,
+      "wall_time": 1.25
+    }
+  ]
+}

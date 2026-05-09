@@ -1,0 +1,8 @@
+{
+  "action": "continue",
+  "notes": [
+    "dry-run"
+  ],
+  "reason": "Mock decision: continue with the current search space.",
+  "search_space_update": {}
+}

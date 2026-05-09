@@ -7,9 +7,9 @@ The goal is to test whether an LLM can act as a useful experiment assistant by r
 summarized run results and proposing bounded sweep/search-space adjustments. The LLM
 does not execute arbitrary code, edit source files, or override hard stopping rules.
 
-## Current Status
+## What This Is
 
-This repository is being built in small phases:
+This is a small public prototype built in phases:
 
 1. Repository baseline and PufferLib research notes.
 2. One manual PufferLib training run from the CLI.
@@ -19,16 +19,24 @@ This repository is being built in small phases:
 6. Minimal closed-loop controller.
 7. Documentation polish and example outputs.
 
-Phase 0 through Phase 2 are implemented at this point.
+The current implementation covers the full MVP path: manual run, metrics summary,
+mock or live LLM decision, validated decision schema, and a conservative loop
+controller.
+
+## What This Is Not
+
+- It is not an RL framework.
+- It does not let an LLM execute arbitrary shell commands.
+- It does not let an LLM edit source code during the experiment loop.
+- It does not claim that LLMs magically solve RL.
 
 ## Setup
 
 Use Python 3.11 or newer.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
+uv venv --python 3.11
+uv pip install -e ".[dev]"
 ```
 
 Copy `.env.example` to `.env` locally and set `OPENROUTER_API_KEY` before using real
@@ -42,14 +50,14 @@ based. Install and build PufferLib using the current upstream instructions first
 Smoke-test this tool's config handling without launching training:
 
 ```bash
-PYTHONPATH=src python -m puffer_llm_sweeper run --config configs/base.yaml --dry-run
+uv run python -m puffer_llm_sweeper run --config configs/base.yaml --dry-run
 ```
 
 After PufferLib 4.0 is installed and the selected environment is built, launch one
 small training run:
 
 ```bash
-PYTHONPATH=src python -m puffer_llm_sweeper run --config configs/base.yaml
+uv run python -m puffer_llm_sweeper run --config configs/base.yaml
 ```
 
 Outputs are configured under ignored `runs/` subdirectories.
@@ -59,7 +67,7 @@ Outputs are configured under ignored `runs/` subdirectories.
 Parse completed PufferLib JSON logs into a normalized summary:
 
 ```bash
-PYTHONPATH=src python -m puffer_llm_sweeper summarize \
+uv run python -m puffer_llm_sweeper summarize \
   --logs-dir runs/logs \
   --output runs/summary.json
 ```
@@ -69,7 +77,7 @@ PYTHONPATH=src python -m puffer_llm_sweeper summarize \
 Generate a validated mock decision without spending API credits:
 
 ```bash
-PYTHONPATH=src python -m puffer_llm_sweeper decide \
+uv run python -m puffer_llm_sweeper decide \
   --summary runs/summary.json \
   --output runs/decision.json
 ```
@@ -81,7 +89,7 @@ Use `--live` only when you want to spend OpenRouter credits.
 Run one conservative loop iteration in mock mode:
 
 ```bash
-PYTHONPATH=src python -m puffer_llm_sweeper loop \
+uv run python -m puffer_llm_sweeper loop \
   --config configs/base.yaml \
   --max-iterations 1 \
   --max-trials 1
@@ -89,6 +97,32 @@ PYTHONPATH=src python -m puffer_llm_sweeper loop \
 
 Use `--skip-training` to test summary and decision plumbing without launching
 PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
+
+## Examples
+
+Tiny mock outputs are tracked under `examples/`. Real training outputs belong
+under ignored `runs/` or `outputs/`.
+
+```bash
+uv run python -m puffer_llm_sweeper decide \
+  --summary examples/mock-summary.json \
+  --output /tmp/mock-decision.json
+```
+
+## Tests
+
+```bash
+uv run python -m unittest discover -s tests
+uv run ruff check .
+```
+
+## Limitations
+
+- PufferLib 4.0 setup is local-machine dependent and may require CUDA/source
+  builds through the upstream PufferTank workflow.
+- The loop is intentionally conservative and small; it does not run large sweeps
+  by default.
+- OpenRouter live calls are opt-in with `--live`; mock mode is the default.
 
 ## Project Boundaries
 
