@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 from puffer_llm_sweeper.decisions import LlmDecision, decision_to_json
 from puffer_llm_sweeper.metrics import RunSummary, summarize_logs, write_summary
@@ -39,6 +42,7 @@ def run_loop(
     logs_dir: Path,
     summary_path: Path,
     decision_path: Path,
+    work_config_path: Path,
     rules: StopRules,
     live: bool = False,
     skip_training: bool = False,
@@ -47,6 +51,7 @@ def run_loop(
     trials = 0
     best_history: list[float | None] = []
     last_decision: LlmDecision | None = None
+    current_config_path = initialize_work_config(config_path, work_config_path)
 
     for iteration in range(1, rules.max_iterations + 1):
         pre_stop = evaluate_stop_rules(
@@ -61,7 +66,7 @@ def run_loop(
             return _result(iteration - 1, trials, pre_stop, best_history, last_decision)
 
         if not skip_training:
-            run_training(config_path)
+            run_training(current_config_path)
             trials += 1
 
         summaries = summarize_logs(logs_dir) if logs_dir.exists() else []
@@ -72,6 +77,8 @@ def run_loop(
         last_decision = OpenRouterClient().propose_decision(summary_payload, dry_run=not live)
         decision_path.parent.mkdir(parents=True, exist_ok=True)
         decision_path.write_text(decision_to_json(last_decision) + "\n", encoding="utf-8")
+        apply_decision_to_config(current_config_path, last_decision, work_config_path)
+        current_config_path = work_config_path
 
         post_stop = evaluate_stop_rules(
             summaries=summaries,
@@ -87,6 +94,37 @@ def run_loop(
             return _result(iteration, trials, "llm_stop", best_history, last_decision)
 
     return _result(rules.max_iterations, trials, "max_iterations", best_history, last_decision)
+
+
+def initialize_work_config(source_path: Path, work_config_path: Path) -> Path:
+    if source_path == work_config_path:
+        return source_path
+    work_config_path.parent.mkdir(parents=True, exist_ok=True)
+    work_config_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    return work_config_path
+
+
+def apply_decision_to_config(
+    source_path: Path,
+    decision: LlmDecision,
+    output_path: Path,
+) -> None:
+    raw = yaml.safe_load(source_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Loop config must be a mapping: {source_path}")
+
+    puffer = raw.setdefault("puffer", {})
+    if not isinstance(puffer, dict):
+        raise ValueError("Loop config key `puffer` must be a mapping when provided.")
+    train = puffer.setdefault("train", {})
+    if not isinstance(train, dict):
+        raise ValueError("Loop config key `puffer.train` must be a mapping when provided.")
+
+    for name, range_config in decision.search_space_update.items():
+        train[name] = _representative_value(range_config.min, range_config.max, range_config.scale)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(yaml.safe_dump(raw, sort_keys=True), encoding="utf-8")
 
 
 def evaluate_stop_rules(
@@ -160,3 +198,9 @@ def _low_improvement(best_history: list[float | None], window: int, epsilon: flo
         return False
     recent = rewards[-window:]
     return max(recent) - min(recent) < epsilon
+
+
+def _representative_value(min_value: float, max_value: float, scale: str) -> float:
+    if scale == "log":
+        return math.sqrt(min_value * max_value)
+    return (min_value + max_value) / 2

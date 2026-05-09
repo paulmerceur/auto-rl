@@ -82,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_parser.add_argument("--logs-dir", type=Path, default=Path("runs/logs"))
     loop_parser.add_argument("--summary", type=Path, default=Path("runs/summary.json"))
     loop_parser.add_argument("--decision", type=Path, default=Path("runs/decision.json"))
+    loop_parser.add_argument("--work-config", type=Path, default=Path("runs/loop_config.yaml"))
     loop_parser.add_argument("--max-iterations", type=int, default=1)
     loop_parser.add_argument("--max-trials", type=int, default=1)
     loop_parser.add_argument("--max-minutes", type=float, default=10.0)
@@ -153,6 +154,7 @@ def main() -> int:
                 logs_dir=args.logs_dir,
                 summary_path=args.summary,
                 decision_path=args.decision,
+                work_config_path=args.work_config,
                 rules=StopRules(
                     max_iterations=args.max_iterations,
                     max_trials=args.max_trials,

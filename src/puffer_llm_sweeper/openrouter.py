@@ -92,13 +92,22 @@ def build_decision_messages(summary: dict[str, Any]) -> list[dict[str, str]]:
     system_prompt = (
         "You are assisting with RL experiment management. Given completed PufferLib "
         "runs, propose the next search-space adjustment. Do not invent metrics. Do "
-        "not request arbitrary code execution. Output valid JSON only."
+        "not request arbitrary code execution. Output valid JSON only. The JSON must "
+        "match the requested schema exactly."
     )
     user_prompt = (
-        "Return exactly this JSON shape: "
-        '{"action":"continue|narrow_search|expand_search|stop",'
-        '"reason":"short explanation","search_space_update":{},'
-        '"notes":["short note"]}\n\n'
+        "Return one JSON object with exactly these top-level keys: action, reason, "
+        "search_space_update, notes.\n"
+        "action must be one of: continue, narrow_search, expand_search, stop.\n"
+        "search_space_update must be an object whose keys are only: learning_rate, "
+        "entropy_coef, gamma, clip_coef, vf_coef, max_grad_norm.\n"
+        "Each search_space_update value must be an object with numeric min, numeric "
+        "max, and scale equal to linear or log. Do not nest keys under train/env. "
+        "Do not output lists of candidate values.\n"
+        "Example: "
+        '{"action":"narrow_search","reason":"short explanation",'
+        '"search_space_update":{"learning_rate":{"min":0.0001,"max":0.001,'
+        '"scale":"log"}},"notes":["short note"]}\n\n'
         f"Completed run summary:\n{json.dumps(summary, indent=2, sort_keys=True)}"
     )
     return [

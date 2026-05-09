@@ -97,6 +97,8 @@ uv run python -m puffer_llm_sweeper loop \
 
 Use `--skip-training` to test summary and decision plumbing without launching
 PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
+Validated search-space updates are applied to `runs/loop_config.yaml`; the tracked
+base config is not modified.
 
 ## Examples
 
