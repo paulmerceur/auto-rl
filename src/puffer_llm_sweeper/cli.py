@@ -51,6 +51,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/summary.json"),
         help="Path to write normalized summary JSON.",
     )
+
+    decide_parser = subparsers.add_parser(
+        "decide",
+        help="Ask OpenRouter, or a mock client, for the next validated decision.",
+    )
+    decide_parser.add_argument(
+        "--summary",
+        type=Path,
+        default=Path("runs/summary.json"),
+        help="Path to normalized summary JSON.",
+    )
+    decide_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/decision.json"),
+        help="Path to write validated decision JSON.",
+    )
+    decide_parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Use OpenRouter instead of the default mock decision.",
+    )
     return parser
 
 
@@ -82,6 +104,21 @@ def main() -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         print(f"Wrote {len(summaries)} run summaries to {args.output}")
+        return 0
+
+    if args.command == "decide":
+        from puffer_llm_sweeper.decisions import decision_to_json
+        from puffer_llm_sweeper.openrouter import OpenRouterClient, load_summary
+
+        try:
+            summary = load_summary(args.summary)
+            decision = OpenRouterClient().propose_decision(summary, dry_run=not args.live)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(decision_to_json(decision) + "\n", encoding="utf-8")
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Wrote validated decision to {args.output}")
         return 0
 
     parser.print_help()

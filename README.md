@@ -64,6 +64,18 @@ PYTHONPATH=src python -m puffer_llm_sweeper summarize \
   --output runs/summary.json
 ```
 
+## LLM Decision
+
+Generate a validated mock decision without spending API credits:
+
+```bash
+PYTHONPATH=src python -m puffer_llm_sweeper decide \
+  --summary runs/summary.json \
+  --output runs/decision.json
+```
+
+Use `--live` only when you want to spend OpenRouter credits.
+
 ## Project Boundaries
 
 - CLI first; no web UI.
