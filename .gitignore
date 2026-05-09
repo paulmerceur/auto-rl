@@ -12,6 +12,7 @@ venv/
 
 runs/
 outputs/
+.docs/
 wandb/
 tensorboard/
 *.log
