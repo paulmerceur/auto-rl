@@ -107,7 +107,13 @@ def _target_metric_name(raw: JsonDict) -> str:
 
 
 def _reward_series(raw: JsonDict, metrics: JsonDict) -> list[float]:
-    candidates = [_target_metric_name(raw), "environment/score", "environment/reward"]
+    candidates = [
+        "env/score",
+        "environment/score",
+        "environment/reward",
+        "env/episode_length",
+        _target_metric_name(raw),
+    ]
     for name in candidates:
         rewards = _number_series(metrics.get(name))
         if rewards:

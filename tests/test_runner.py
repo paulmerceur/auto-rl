@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from puffer_llm_sweeper.runner import load_run_config, merge_config, write_returned_logs
+from puffer_llm_sweeper.runner import _json_safe, load_run_config, merge_config, write_returned_logs
 
 
 class RunnerConfigTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class RunnerConfigTests(unittest.TestCase):
     def test_write_returned_logs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "base.yaml"
-            config_path.write_text("env_name: puffer_cartpole\noutput_dir: out\n", encoding="utf-8")
+            config_path.write_text("env_name: cartpole\noutput_dir: out\n", encoding="utf-8")
             config = load_run_config(config_path)
             config = type(config)(
                 env_name=config.env_name,
@@ -58,8 +58,11 @@ class RunnerConfigTests(unittest.TestCase):
 
             payload = output_path.read_text(encoding="utf-8")
 
-        self.assertIn('"env_name": "puffer_cartpole"', payload)
+        self.assertIn('"env_name": "cartpole"', payload)
         self.assertIn('"environment/score"', payload)
+
+    def test_json_safe_encodes_bytes(self) -> None:
+        self.assertEqual(_json_safe({"nccl_id": b"\x00\xff"}), {"nccl_id": "00ff"})
 
 
 if __name__ == "__main__":

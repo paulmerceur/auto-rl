@@ -85,6 +85,27 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(summary.best_reward, 12.0)
         self.assertEqual(summary.ppo_metrics["losses/policy_loss"], 0.5)
 
+    def test_prefers_score_over_sweep_metric(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "cartpole" / "run-1.json"
+            log_path.parent.mkdir()
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "sweep": {"metric": "perf"},
+                        "metrics": {
+                            "env/perf": [0.1],
+                            "env/score": [28.0],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = parse_log(log_path)
+
+        self.assertEqual(summary.final_reward, 28.0)
+
 
 if __name__ == "__main__":
     unittest.main()

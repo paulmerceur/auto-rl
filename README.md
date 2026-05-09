@@ -44,10 +44,21 @@ LLM calls. `.env` is ignored by Git.
 
 ## Manual PufferLib Run
 
-The default config targets the PyPI PufferLib 3.0 package with a tiny CPU
-`puffer_cartpole` run. PufferLib 4.0 appears to use a newer source/Docker
-workflow, so this repo keeps the runner small and checks the installed package at
-runtime.
+The default config targets PufferLib 4.0 with a tiny CPU `cartpole` run.
+PufferLib 4.0 currently needs the GitHub source workflow rather than PyPI:
+
+```bash
+git clone --branch 4.0 https://github.com/PufferAI/PufferLib.git .deps/PufferLib
+cd .deps/PufferLib
+CC=gcc CXX=g++ bash build.sh cartpole --cpu
+cd ../..
+uv pip install -e .deps/PufferLib
+```
+
+On systems with `clang`, the `CC`/`CXX` override may not be needed. If using
+GPU/CUDA, use upstream PufferLib build instructions instead of `--cpu`.
+The default config sets `slowly: true`, which uses PufferLib's PyTorch backend
+with the CPU `_C` vector environment.
 
 Smoke-test this tool's config handling without launching training:
 
@@ -121,8 +132,8 @@ uv run ruff check .
 
 ## Limitations
 
-- PufferLib packaging is in flux: PyPI currently provides 3.0, while newer docs
-  reference a 4.0 source/Docker workflow.
+- PufferLib packaging is in flux: PyPI currently provides 3.0, while current
+  docs reference a 4.0 source/Docker workflow.
 - The loop is intentionally conservative and small; it does not run large sweeps
   by default.
 - OpenRouter live calls are opt-in with `--live`; mock mode is the default.

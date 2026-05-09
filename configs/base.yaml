@@ -1,20 +1,28 @@
-env_name: puffer_cartpole
+env_name: cartpole
 output_dir: runs
 
 puffer:
+  slowly: true
+  checkpoint_dir: runs/checkpoints
+  log_dir: runs/logs
   train:
     data_dir: runs/pufferlib
     device: cpu
-    total_timesteps: 4096
+    total_timesteps: 32768
     batch_size: 1024
     minibatch_size: 256
-    bptt_horizon: 32
+    horizon: 32
     checkpoint_interval: 1
   vec:
-    num_envs: 4
-    num_workers: 1
-    batch_size: 4
+    total_agents: 256
+    num_buffers: 2
+    num_threads: 1
   env:
     num_envs: 4
+  policy:
+    hidden_size: 32
+    num_layers: 2
+    expansion_factor: 1
   sweep:
+    metric: score
     downsample: 1

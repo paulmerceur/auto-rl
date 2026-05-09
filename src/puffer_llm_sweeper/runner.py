@@ -185,7 +185,8 @@ def run_training(config_path: Path, dry_run: bool = False) -> int:
     args = build_puffer_args(config, pufferl)
     ensure_output_dirs(args)
     logs = pufferl.train(config.env_name, args=args)
-    write_returned_logs(config, args, logs)
+    if isinstance(logs, list) and logs:
+        write_returned_logs(config, args, logs)
     return 0
 
 
@@ -196,7 +197,7 @@ def write_returned_logs(config: RunConfig, args: ConfigDict, logs: Any) -> Path:
     payload = {
         "run_id": run_id,
         "env_name": config.env_name,
-        "config": args,
+        "config": _json_safe(args),
         "metrics": _logs_to_metric_series(logs),
     }
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -215,3 +216,17 @@ def _logs_to_metric_series(logs: Any) -> ConfigDict:
             if isinstance(value, int | float | str | bool) or value is None:
                 series.setdefault(str(key), []).append(value)
     return series
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, int | float | str | bool) or value is None:
+        return value
+    return repr(value)
