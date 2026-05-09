@@ -9,7 +9,9 @@ import yaml
 
 from puffer_llm_sweeper.decisions import parse_decision_json
 from puffer_llm_sweeper.loop import (
+    MAX_TRIALS_PER_ITERATION,
     StopRules,
+    _next_batch_trials,
     apply_decision_to_config,
     evaluate_stop_rules,
     run_loop,
@@ -64,6 +66,7 @@ class LoopTests(unittest.TestCase):
                     improvement_epsilon=0.0,
                     max_failures=2,
                 ),
+                trials_per_iteration=3,
                 skip_training=True,
             )
 
@@ -81,16 +84,18 @@ class LoopTests(unittest.TestCase):
             root = Path(tmpdir)
             source_path = root / "base.yaml"
             output_path = root / "next.yaml"
-            source_path.write_text(
-                "env_name: target\npuffer:\n  train:\n    gamma: 0.95\n",
-                encoding="utf-8",
-            )
+            source_path.write_text("env_name: target\npuffer:\n  sweep:\n    metric: score\n")
             decision = parse_decision_json(
                 {
                     "action": "narrow_search",
                     "reason": "Use lower LR.",
                     "search_space_update": {
-                        "learning_rate": {"min": 0.0001, "max": 0.001, "scale": "log"}
+                        "train.learning_rate": {
+                            "distribution": "log_normal",
+                            "min": 0.0001,
+                            "max": 0.001,
+                            "scale": 0.5,
+                        }
                     },
                     "notes": [],
                 }
@@ -99,8 +104,27 @@ class LoopTests(unittest.TestCase):
             apply_decision_to_config(source_path, decision, output_path)
             updated = yaml.safe_load(output_path.read_text(encoding="utf-8"))
 
-        self.assertAlmostEqual(updated["puffer"]["train"]["learning_rate"], 0.0003162277)
-        self.assertEqual(updated["puffer"]["train"]["gamma"], 0.95)
+        self.assertEqual(
+            updated["puffer"]["sweep"]["train"]["learning_rate"],
+            {"distribution": "log_normal", "min": 0.0001, "max": 0.001, "scale": 0.5},
+        )
+        self.assertEqual(updated["puffer"]["sweep"]["metric"], "score")
+
+    def test_next_batch_trials_clamps_llm_suggestion(self) -> None:
+        decision = parse_decision_json(
+            {
+                "action": "continue",
+                "reason": "Use the max batch.",
+                "suggested_trials": MAX_TRIALS_PER_ITERATION,
+                "search_space_update": {},
+                "notes": [],
+            }
+        )
+
+        self.assertEqual(
+            _next_batch_trials(default_trials=3, remaining_trials=4, last_decision=decision),
+            4,
+        )
 
 
 if __name__ == "__main__":

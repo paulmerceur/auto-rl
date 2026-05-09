@@ -19,9 +19,9 @@ This is a small public prototype built in phases:
 6. Minimal closed-loop controller.
 7. Documentation polish and example outputs.
 
-The current implementation covers the full MVP path: manual run, metrics summary,
-mock or live LLM decision, validated decision schema, and a conservative loop
-controller.
+The current implementation covers the full MVP path: bounded PufferLib sweeps,
+metrics summary, mock or live LLM decision, validated decision schema, and a
+conservative loop controller.
 
 ## What This Is Not
 
@@ -42,9 +42,9 @@ uv pip install -e ".[dev]"
 Copy `.env.example` to `.env` locally and set `OPENROUTER_API_KEY` before using real
 LLM calls. `.env` is ignored by Git.
 
-## Manual PufferLib Run
+## PufferLib Setup
 
-The default config targets PufferLib 4.0 with a tiny CPU `cartpole` run.
+The default config targets PufferLib 4.0 with tiny CPU `cartpole` sweep batches.
 PufferLib 4.0 currently needs the GitHub source workflow rather than PyPI:
 
 ```bash
@@ -63,16 +63,23 @@ with the CPU `_C` vector environment.
 Smoke-test this tool's config handling without launching training:
 
 ```bash
-uv run python -m puffer_llm_sweeper run --config configs/base.yaml --dry-run
+uv run python -m puffer_llm_sweeper sweep --config configs/base.yaml --max-runs 1 --dry-run
 ```
 
-After PufferLib is installed, launch one small training run:
+After PufferLib is installed, launch one bounded sweep batch:
+
+```bash
+uv run python -m puffer_llm_sweeper sweep --config configs/base.yaml --max-runs 3
+```
+
+Outputs are configured under ignored `runs/` subdirectories.
+
+For debugging one fixed config without sweep sampling, the lower-level command is
+still available:
 
 ```bash
 uv run python -m puffer_llm_sweeper run --config configs/base.yaml
 ```
-
-Outputs are configured under ignored `runs/` subdirectories.
 
 ## Metrics Summary
 
@@ -104,13 +111,20 @@ Run one conservative loop iteration in mock mode:
 uv run python -m puffer_llm_sweeper loop \
   --config configs/base.yaml \
   --max-iterations 1 \
-  --max-trials 1
+  --max-trials 10 \
+  --trials-per-iteration 3
 ```
 
 Use `--skip-training` to test summary and decision plumbing without launching
 PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
 Validated search-space updates are applied to `runs/loop_config.yaml`; the tracked
 base config is not modified.
+
+The loop is sweep-first. Each iteration launches a bounded PufferLib sweep batch.
+`--trials-per-iteration` is the starting batch size. The LLM may return
+`suggested_trials` from 1 to 10, but that value is only a recommendation. The loop
+always clamps it by the remaining total budget, and the project defaults to a hard
+total cap of 100 trials.
 
 ## Examples
 
@@ -136,6 +150,8 @@ uv run ruff check .
   docs reference a 4.0 source/Docker workflow.
 - The loop is intentionally conservative and small; it does not run large sweeps
   by default.
+- The LLM can suggest sweep ranges and the next batch size, but hard budgets
+  always win: at most 10 trials per iteration and 100 total by default.
 - OpenRouter live calls are opt-in with `--live`; mock mode is the default.
 
 ## Project Boundaries

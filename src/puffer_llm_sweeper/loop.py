@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,10 @@ import yaml
 from puffer_llm_sweeper.decisions import LlmDecision, decision_to_json
 from puffer_llm_sweeper.metrics import RunSummary, summarize_logs, write_summary
 from puffer_llm_sweeper.openrouter import OpenRouterClient
-from puffer_llm_sweeper.runner import run_training
+from puffer_llm_sweeper.runner import run_sweep
+
+
+MAX_TRIALS_PER_ITERATION = 10
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ def run_loop(
     decision_path: Path,
     work_config_path: Path,
     rules: StopRules,
+    trials_per_iteration: int,
     live: bool = False,
     skip_training: bool = False,
 ) -> LoopResult:
@@ -54,6 +57,12 @@ def run_loop(
     current_config_path = initialize_work_config(config_path, work_config_path)
 
     for iteration in range(1, rules.max_iterations + 1):
+        remaining_trials = rules.max_trials - trials
+        batch_trials = _next_batch_trials(
+            default_trials=trials_per_iteration,
+            remaining_trials=remaining_trials,
+            last_decision=last_decision,
+        )
         pre_stop = evaluate_stop_rules(
             summaries=[],
             best_history=best_history,
@@ -66,15 +75,26 @@ def run_loop(
             return _result(iteration - 1, trials, pre_stop, best_history, last_decision)
 
         if not skip_training:
-            run_training(current_config_path)
-            trials += 1
+            run_sweep(current_config_path, max_runs=batch_trials)
+            trials += batch_trials
 
         summaries = summarize_logs(logs_dir) if logs_dir.exists() else []
         write_summary(summaries, summary_path)
         best_history.append(_best_reward(summaries))
 
         summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
-        last_decision = OpenRouterClient().propose_decision(summary_payload, dry_run=not live)
+        budget = {
+            "max_total_trials": rules.max_trials,
+            "trials_used": trials,
+            "trials_remaining": max(rules.max_trials - trials, 0),
+            "max_trials_per_iteration": MAX_TRIALS_PER_ITERATION,
+            "default_trials_per_iteration": trials_per_iteration,
+        }
+        last_decision = OpenRouterClient().propose_decision(
+            summary_payload,
+            dry_run=not live,
+            budget=budget,
+        )
         decision_path.parent.mkdir(parents=True, exist_ok=True)
         decision_path.write_text(decision_to_json(last_decision) + "\n", encoding="utf-8")
         apply_decision_to_config(current_config_path, last_decision, work_config_path)
@@ -116,12 +136,12 @@ def apply_decision_to_config(
     puffer = raw.setdefault("puffer", {})
     if not isinstance(puffer, dict):
         raise ValueError("Loop config key `puffer` must be a mapping when provided.")
-    train = puffer.setdefault("train", {})
-    if not isinstance(train, dict):
-        raise ValueError("Loop config key `puffer.train` must be a mapping when provided.")
+    sweep = puffer.setdefault("sweep", {})
+    if not isinstance(sweep, dict):
+        raise ValueError("Loop config key `puffer.sweep` must be a mapping when provided.")
 
     for name, range_config in decision.search_space_update.items():
-        train[name] = _representative_value(range_config.min, range_config.max, range_config.scale)
+        _set_nested_sweep_range(sweep, name, range_config.model_dump(mode="json"))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(yaml.safe_dump(raw, sort_keys=True), encoding="utf-8")
@@ -200,7 +220,24 @@ def _low_improvement(best_history: list[float | None], window: int, epsilon: flo
     return max(recent) - min(recent) < epsilon
 
 
-def _representative_value(min_value: float, max_value: float, scale: str) -> float:
-    if scale == "log":
-        return math.sqrt(min_value * max_value)
-    return (min_value + max_value) / 2
+def _next_batch_trials(
+    default_trials: int,
+    remaining_trials: int,
+    last_decision: LlmDecision | None,
+) -> int:
+    if remaining_trials <= 0:
+        return 0
+    requested = last_decision.suggested_trials if last_decision else default_trials
+    requested = requested or default_trials
+    return max(1, min(requested, MAX_TRIALS_PER_ITERATION, remaining_trials))
+
+
+def _set_nested_sweep_range(sweep: dict, dotted_name: str, value: dict) -> None:
+    parts = dotted_name.split(".")
+    if len(parts) != 2:
+        raise ValueError(f"Expected sweep update path like section.name, got: {dotted_name}")
+    section_name, param_name = parts
+    section = sweep.setdefault(section_name, {})
+    if not isinstance(section, dict):
+        raise ValueError(f"Loop config key `puffer.sweep.{section_name}` must be a mapping.")
+    section[param_name] = value

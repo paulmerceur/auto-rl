@@ -190,6 +190,39 @@ def run_training(config_path: Path, dry_run: bool = False) -> int:
     return 0
 
 
+def run_sweep(config_path: Path, max_runs: int | None = None, dry_run: bool = False) -> int:
+    config = load_run_config(config_path)
+
+    if dry_run:
+        preview = {
+            "env_name": config.env_name,
+            "output_dir": str(config.output_dir),
+            "max_runs": max_runs,
+            "puffer_overrides": config.puffer_overrides,
+        }
+        print(json.dumps(preview, indent=2, sort_keys=True))
+        return 0
+
+    try:
+        from pufferlib import pufferl
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "PufferLib is not installed. Install PufferLib 4.0 from the current "
+            "PufferTank/PufferLib source workflow before running sweeps."
+        ) from exc
+
+    args = build_puffer_args(config, pufferl)
+    args.setdefault("sweep", {})
+    if max_runs is not None:
+        args["sweep"]["max_runs"] = max_runs
+    args["sweep"].setdefault("gpus", 1)
+    args.setdefault("train", {})
+    args["train"].setdefault("gpus", 1)
+    ensure_output_dirs(args)
+    pufferl.sweep(config.env_name, args=args)
+    return 0
+
+
 def write_returned_logs(config: RunConfig, args: ConfigDict, logs: Any) -> Path:
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output_path = config.output_dir / "logs" / config.env_name / f"{run_id}.json"

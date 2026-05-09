@@ -52,6 +52,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to write normalized summary JSON.",
     )
 
+    sweep_parser = subparsers.add_parser(
+        "sweep",
+        help="Launch a bounded PufferLib sweep batch.",
+    )
+    sweep_parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="Path to a YAML run config.",
+    )
+    sweep_parser.add_argument(
+        "--max-runs",
+        type=int,
+        default=None,
+        help="Override Puffer sweep max_runs.",
+    )
+    sweep_parser.add_argument("--dry-run", action="store_true")
+
     decide_parser = subparsers.add_parser(
         "decide",
         help="Ask OpenRouter, or a mock client, for the next validated decision.",
@@ -84,7 +102,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_parser.add_argument("--decision", type=Path, default=Path("runs/decision.json"))
     loop_parser.add_argument("--work-config", type=Path, default=Path("runs/loop_config.yaml"))
     loop_parser.add_argument("--max-iterations", type=int, default=1)
-    loop_parser.add_argument("--max-trials", type=int, default=1)
+    loop_parser.add_argument("--max-trials", type=int, default=100)
+    loop_parser.add_argument(
+        "--trials-per-iteration",
+        type=int,
+        default=3,
+        help="Initial sweep batch size. LLM suggestions are clamped to at most 10.",
+    )
     loop_parser.add_argument("--max-minutes", type=float, default=10.0)
     loop_parser.add_argument("--target-reward", type=float, default=None)
     loop_parser.add_argument("--no-improvement-iterations", type=int, default=3)
@@ -130,6 +154,15 @@ def main() -> int:
         print(f"Wrote {len(summaries)} run summaries to {args.output}")
         return 0
 
+    if args.command == "sweep":
+        from puffer_llm_sweeper.runner import run_sweep
+
+        try:
+            return run_sweep(args.config, max_runs=args.max_runs, dry_run=args.dry_run)
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
     if args.command == "decide":
         from puffer_llm_sweeper.decisions import decision_to_json
         from puffer_llm_sweeper.openrouter import OpenRouterClient, load_summary
@@ -165,6 +198,7 @@ def main() -> int:
                     improvement_epsilon=args.improvement_epsilon,
                     max_failures=args.max_failures,
                 ),
+                trials_per_iteration=args.trials_per_iteration,
                 live=args.live,
                 skip_training=args.skip_training,
             )

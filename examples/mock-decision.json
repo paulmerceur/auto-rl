@@ -4,5 +4,6 @@
     "dry-run"
   ],
   "reason": "Mock decision: continue with the current search space.",
+  "suggested_trials": 1,
   "search_space_update": {}
 }

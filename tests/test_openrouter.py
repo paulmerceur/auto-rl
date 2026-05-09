@@ -15,7 +15,7 @@ class FakeResponse:
                 {
                     "message": {
                         "content": (
-                            '{"action":"stop","reason":"Target reached.",'
+                            '{"action":"stop","reason":"Target reached.","suggested_trials":1,'
                             '"search_space_update":{},"notes":[]}'
                         )
                     }
@@ -57,10 +57,11 @@ class OpenRouterTests(unittest.TestCase):
         self.assertEqual(session.payload["response_format"], {"type": "json_object"})
 
     def test_prompt_includes_summary(self) -> None:
-        messages = build_decision_messages({"best_reward": 1.0})
+        messages = build_decision_messages({"best_reward": 1.0}, budget={"trials_remaining": 10})
 
         self.assertIn("valid JSON only", messages[0]["content"])
         self.assertIn('"best_reward": 1.0', messages[1]["content"])
+        self.assertIn('"trials_remaining": 10', messages[1]["content"])
 
 
 if __name__ == "__main__":

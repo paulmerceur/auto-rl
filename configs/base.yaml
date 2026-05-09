@@ -24,5 +24,40 @@ puffer:
     num_layers: 2
     expansion_factor: 1
   sweep:
+    max_runs: 3
+    gpus: 1
+    use_gpu: false
     metric: score
     downsample: 1
+    train:
+      total_timesteps:
+        distribution: log_normal
+        min: 32768
+        max: 65536
+        scale: time
+      learning_rate:
+        distribution: log_normal
+        min: 0.0001
+        max: 0.1
+        scale: 0.5
+      ent_coef:
+        distribution: log_normal
+        min: 0.00001
+        max: 0.1
+        scale: auto
+      gamma:
+        distribution: logit_normal
+        min: 0.8
+        max: 0.999
+        scale: auto
+      clip_coef:
+        distribution: uniform
+        min: 0.05
+        max: 0.5
+        scale: auto
+    vec:
+      total_agents:
+        distribution: uniform_pow2
+        min: 256
+        max: 512
+        scale: auto

@@ -11,29 +11,41 @@ class DecisionTests(unittest.TestCase):
             {
                 "action": "narrow_search",
                 "reason": "Best runs cluster at lower learning rates.",
+                "suggested_trials": 3,
                 "search_space_update": {
-                    "learning_rate": {"min": 0.0001, "max": 0.001, "scale": "log"}
+                    "train.learning_rate": {
+                        "distribution": "log_normal",
+                        "min": 0.0001,
+                        "max": 0.001,
+                        "scale": 0.5,
+                    }
                 },
                 "notes": ["keep entropy range unchanged"],
             }
         )
 
         self.assertEqual(decision.action, DecisionAction.NARROW_SEARCH)
-        self.assertEqual(decision.search_space_update["learning_rate"].scale, "log")
+        self.assertEqual(decision.suggested_trials, 3)
+        self.assertEqual(decision.search_space_update["train.learning_rate"].distribution, "log_normal")
 
-    def test_accepts_pufferlib_3_entropy_name(self) -> None:
+    def test_accepts_puffer_train_entropy_name(self) -> None:
         decision = parse_decision_json(
             {
                 "action": "expand_search",
                 "reason": "Try more entropy.",
                 "search_space_update": {
-                    "ent_coef": {"min": 0.001, "max": 0.05, "scale": "log"}
+                    "train.ent_coef": {
+                        "distribution": "log_normal",
+                        "min": 0.001,
+                        "max": 0.05,
+                        "scale": "auto",
+                    }
                 },
                 "notes": [],
             }
         )
 
-        self.assertEqual(decision.search_space_update["ent_coef"].scale, "log")
+        self.assertEqual(decision.search_space_update["train.ent_coef"].distribution, "log_normal")
 
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):
@@ -42,7 +54,12 @@ class DecisionTests(unittest.TestCase):
                     "action": "expand_search",
                     "reason": "Try a new thing.",
                     "search_space_update": {
-                        "shell_command": {"min": 1, "max": 2, "scale": "linear"}
+                        "shell_command": {
+                            "distribution": "uniform",
+                            "min": 1,
+                            "max": 2,
+                            "scale": "auto",
+                        }
                     },
                     "notes": [],
                 }
@@ -55,8 +72,25 @@ class DecisionTests(unittest.TestCase):
                     "action": "narrow_search",
                     "reason": "Too broad.",
                     "search_space_update": {
-                        "learning_rate": {"min": 0.0001, "max": 2.0, "scale": "log"}
+                        "train.learning_rate": {
+                            "distribution": "log_normal",
+                            "min": 0.0001,
+                            "max": 2.0,
+                            "scale": 0.5,
+                        }
                     },
+                    "notes": [],
+                }
+            )
+
+    def test_rejects_too_many_suggested_trials(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_json(
+                {
+                    "action": "continue",
+                    "reason": "Spend too much.",
+                    "suggested_trials": 11,
+                    "search_space_update": {},
                     "notes": [],
                 }
             )

@@ -16,29 +16,38 @@ class DecisionAction(StrEnum):
     STOP = "stop"
 
 
+MAX_SUGGESTED_TRIALS = 10
+
 ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
-    "learning_rate": (1e-6, 1.0),
-    "ent_coef": (0.0, 1.0),
-    "gamma": (0.0, 1.0),
-    "clip_coef": (0.0, 1.0),
-    "vf_coef": (0.0, 10.0),
-    "max_grad_norm": (0.0, 10.0),
+    "train.learning_rate": (1e-6, 1.0),
+    "train.ent_coef": (1e-8, 1.0),
+    "train.gamma": (0.0, 0.99999),
+    "train.clip_coef": (0.0, 1.0),
+    "train.vf_coef": (0.0, 10.0),
+    "train.max_grad_norm": (0.0, 10.0),
+    "train.total_timesteps": (1_024, 10_000_000),
+    "vec.total_agents": (1, 16_384),
+    "policy.hidden_size": (16, 2_048),
+    "policy.num_layers": (1, 16),
 }
 
 
 class SearchSpaceRange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    distribution: Literal["uniform", "int_uniform", "uniform_pow2", "log_normal", "logit_normal"]
     min: float
     max: float
-    scale: Literal["linear", "log"] = "linear"
+    scale: float | Literal["auto", "time"] = "auto"
 
     @model_validator(mode="after")
     def validate_range(self) -> SearchSpaceRange:
         if self.min >= self.max:
             raise ValueError("min must be less than max")
-        if self.scale == "log" and self.min <= 0:
-            raise ValueError("log scale requires min > 0")
+        if self.distribution in {"log_normal", "uniform_pow2"} and self.min <= 0:
+            raise ValueError(f"{self.distribution} requires min > 0")
+        if self.distribution == "logit_normal" and not (0 <= self.min < self.max < 1):
+            raise ValueError("logit_normal requires 0 <= min < max < 1")
         return self
 
 
@@ -47,6 +56,7 @@ class LlmDecision(BaseModel):
 
     action: DecisionAction
     reason: str = Field(min_length=1, max_length=500)
+    suggested_trials: int | None = Field(default=None, ge=1, le=MAX_SUGGESTED_TRIALS)
     search_space_update: dict[str, SearchSpaceRange] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list, max_length=10)
 

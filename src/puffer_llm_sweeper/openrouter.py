@@ -43,12 +43,18 @@ class OpenRouterClient:
         self.config = config or load_openrouter_config()
         self.session = session or requests.Session()
 
-    def propose_decision(self, summary: dict[str, Any], dry_run: bool = True) -> LlmDecision:
+    def propose_decision(
+        self,
+        summary: dict[str, Any],
+        dry_run: bool = True,
+        budget: dict[str, Any] | None = None,
+    ) -> LlmDecision:
         if dry_run:
             return parse_decision_json(
                 {
                     "action": "continue",
                     "reason": "Mock decision: continue with the current search space.",
+                    "suggested_trials": 1,
                     "search_space_update": {},
                     "notes": ["dry-run"],
                 }
@@ -67,7 +73,7 @@ class OpenRouterClient:
             },
             json={
                 "model": self.config.model,
-                "messages": build_decision_messages(summary),
+                "messages": build_decision_messages(summary, budget=budget),
                 "temperature": 0.2,
                 "max_tokens": 700,
                 "response_format": {"type": "json_object"},
@@ -88,7 +94,10 @@ def load_summary(path: Path) -> dict[str, Any]:
     return payload
 
 
-def build_decision_messages(summary: dict[str, Any]) -> list[dict[str, str]]:
+def build_decision_messages(
+    summary: dict[str, Any],
+    budget: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     system_prompt = (
         "You are assisting with RL experiment management. Given completed PufferLib "
         "runs, propose the next search-space adjustment. Do not invent metrics. Do "
@@ -97,17 +106,23 @@ def build_decision_messages(summary: dict[str, Any]) -> list[dict[str, str]]:
     )
     user_prompt = (
         "Return one JSON object with exactly these top-level keys: action, reason, "
-        "search_space_update, notes.\n"
+        "suggested_trials, search_space_update, notes.\n"
         "action must be one of: continue, narrow_search, expand_search, stop.\n"
-        "search_space_update must be an object whose keys are only: learning_rate, "
-        "ent_coef, gamma, clip_coef, vf_coef, max_grad_norm.\n"
+        "suggested_trials must be an integer from 1 to 10. It is only a soft "
+        "recommendation and may be clamped by hard budgets.\n"
+        "search_space_update must be an object whose keys are only: "
+        "train.learning_rate, train.ent_coef, train.gamma, train.clip_coef, "
+        "train.vf_coef, train.max_grad_norm, train.total_timesteps, "
+        "vec.total_agents, policy.hidden_size, policy.num_layers.\n"
         "Each search_space_update value must be an object with numeric min, numeric "
-        "max, and scale equal to linear or log. Do not nest keys under train/env. "
-        "Do not output lists of candidate values.\n"
+        "max, distribution equal to uniform, int_uniform, uniform_pow2, log_normal, "
+        "or logit_normal, and scale as a number, auto, or time. Do not output lists "
+        "of candidate values.\n"
         "Example: "
-        '{"action":"narrow_search","reason":"short explanation",'
-        '"search_space_update":{"learning_rate":{"min":0.0001,"max":0.001,'
-        '"scale":"log"}},"notes":["short note"]}\n\n'
+        '{"action":"narrow_search","reason":"short explanation","suggested_trials":3,'
+        '"search_space_update":{"train.learning_rate":{"distribution":"log_normal",'
+        '"min":0.0001,"max":0.001,"scale":0.5}},"notes":["short note"]}\n\n'
+        f"Hard budget context:\n{json.dumps(budget or {}, indent=2, sort_keys=True)}\n\n"
         f"Completed run summary:\n{json.dumps(summary, indent=2, sort_keys=True)}"
     )
     return [
