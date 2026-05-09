@@ -14,6 +14,8 @@ from puffer_llm_sweeper.loop import (
     _next_batch_trials,
     apply_decision_to_config,
     evaluate_stop_rules,
+    initialize_work_config,
+    loop_paths,
     run_loop,
 )
 
@@ -78,6 +80,70 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(summary["num_runs"], 0)
         self.assertEqual(decision["action"], "continue")
         self.assertTrue(work_config_exists)
+
+    def test_run_dir_isolates_loop_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "runs" / "loop-test"
+            config_path = root / "base.yaml"
+            config_path.write_text("env_name: target\n", encoding="utf-8")
+
+            result = run_loop(
+                config_path=config_path,
+                logs_dir=root / "ignored-logs",
+                summary_path=root / "ignored-summary.json",
+                decision_path=root / "ignored-decision.json",
+                work_config_path=root / "ignored-config.yaml",
+                run_dir=run_dir,
+                rules=StopRules(
+                    max_iterations=1,
+                    max_trials=1,
+                    max_minutes=10,
+                    target_reward=None,
+                    no_improvement_iterations=3,
+                    improvement_window=3,
+                    improvement_epsilon=0.0,
+                    max_failures=2,
+                ),
+                trials_per_iteration=1,
+                skip_training=True,
+            )
+            logs_dir, summary_path, decision_path, work_config_path = loop_paths(run_dir)
+
+            summary_exists = summary_path.exists()
+            decision_exists = decision_path.exists()
+            work_config = yaml.safe_load(work_config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.stop_reason, "max_iterations")
+        self.assertTrue(summary_exists)
+        self.assertTrue(decision_exists)
+        self.assertEqual(str(logs_dir), str(run_dir / "logs"))
+        self.assertEqual(work_config["output_dir"], str(run_dir))
+        self.assertEqual(work_config["puffer"]["log_dir"], str(run_dir / "logs"))
+        self.assertEqual(work_config["puffer"]["checkpoint_dir"], str(run_dir / "checkpoints"))
+        self.assertEqual(work_config["puffer"]["train"]["data_dir"], str(run_dir / "pufferlib"))
+
+    def test_initialize_work_config_preserves_existing_puffer_settings_with_run_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source_path = root / "base.yaml"
+            output_path = root / "work.yaml"
+            run_dir = root / "loop-run"
+            source_path.write_text(
+                "env_name: target\n"
+                "puffer:\n"
+                "  slowly: true\n"
+                "  train:\n"
+                "    total_timesteps: 1024\n",
+                encoding="utf-8",
+            )
+
+            initialize_work_config(source_path, output_path, run_dir=run_dir)
+            updated = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(updated["puffer"]["slowly"])
+        self.assertEqual(updated["puffer"]["train"]["total_timesteps"], 1024)
+        self.assertEqual(updated["puffer"]["train"]["data_dir"], str(run_dir / "pufferlib"))
 
     def test_apply_decision_to_work_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

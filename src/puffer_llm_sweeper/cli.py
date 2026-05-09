@@ -101,6 +101,12 @@ def build_parser() -> argparse.ArgumentParser:
     loop_parser.add_argument("--summary", type=Path, default=Path("runs/summary.json"))
     loop_parser.add_argument("--decision", type=Path, default=Path("runs/decision.json"))
     loop_parser.add_argument("--work-config", type=Path, default=Path("runs/loop_config.yaml"))
+    loop_parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="Directory for all loop artifacts. Overrides logs, summary, decision, and work config paths.",
+    )
     loop_parser.add_argument("--max-iterations", type=int, default=1)
     loop_parser.add_argument("--max-trials", type=int, default=100)
     loop_parser.add_argument(
@@ -199,6 +205,7 @@ def main() -> int:
                     max_failures=args.max_failures,
                 ),
                 trials_per_iteration=args.trials_per_iteration,
+                run_dir=args.run_dir,
                 live=args.live,
                 skip_training=args.skip_training,
             )

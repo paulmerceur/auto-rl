@@ -47,14 +47,18 @@ def run_loop(
     work_config_path: Path,
     rules: StopRules,
     trials_per_iteration: int,
+    run_dir: Path | None = None,
     live: bool = False,
     skip_training: bool = False,
 ) -> LoopResult:
+    if run_dir is not None:
+        logs_dir, summary_path, decision_path, work_config_path = loop_paths(run_dir)
+
     start_time = time.monotonic()
     trials = 0
     best_history: list[float | None] = []
     last_decision: LlmDecision | None = None
-    current_config_path = initialize_work_config(config_path, work_config_path)
+    current_config_path = initialize_work_config(config_path, work_config_path, run_dir=run_dir)
 
     for iteration in range(1, rules.max_iterations + 1):
         remaining_trials = rules.max_trials - trials
@@ -116,11 +120,33 @@ def run_loop(
     return _result(rules.max_iterations, trials, "max_iterations", best_history, last_decision)
 
 
-def initialize_work_config(source_path: Path, work_config_path: Path) -> Path:
-    if source_path == work_config_path:
+def loop_paths(run_dir: Path) -> tuple[Path, Path, Path, Path]:
+    return (
+        run_dir / "logs",
+        run_dir / "summary.json",
+        run_dir / "decision.json",
+        run_dir / "loop_config.yaml",
+    )
+
+
+def initialize_work_config(
+    source_path: Path,
+    work_config_path: Path,
+    run_dir: Path | None = None,
+) -> Path:
+    if source_path == work_config_path and run_dir is None:
         return source_path
     work_config_path.parent.mkdir(parents=True, exist_ok=True)
-    work_config_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    if run_dir is None:
+        work_config_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+        return work_config_path
+
+    raw = yaml.safe_load(source_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Loop config must be a mapping: {source_path}")
+    _apply_run_dir(raw, run_dir)
+    work_config_path.write_text(yaml.safe_dump(raw, sort_keys=True), encoding="utf-8")
     return work_config_path
 
 
@@ -241,3 +267,18 @@ def _set_nested_sweep_range(sweep: dict, dotted_name: str, value: dict) -> None:
     if not isinstance(section, dict):
         raise ValueError(f"Loop config key `puffer.sweep.{section_name}` must be a mapping.")
     section[param_name] = value
+
+
+def _apply_run_dir(raw: dict, run_dir: Path) -> None:
+    raw["output_dir"] = str(run_dir)
+    puffer = raw.setdefault("puffer", {})
+    if not isinstance(puffer, dict):
+        raise ValueError("Loop config key `puffer` must be a mapping when provided.")
+
+    puffer["log_dir"] = str(run_dir / "logs")
+    puffer["checkpoint_dir"] = str(run_dir / "checkpoints")
+
+    train = puffer.setdefault("train", {})
+    if not isinstance(train, dict):
+        raise ValueError("Loop config key `puffer.train` must be a mapping when provided.")
+    train["data_dir"] = str(run_dir / "pufferlib")

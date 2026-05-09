@@ -110,6 +110,7 @@ Run one conservative loop iteration in mock mode:
 ```bash
 uv run python -m puffer_llm_sweeper loop \
   --config configs/base.yaml \
+  --run-dir runs/loop-smoke \
   --max-iterations 1 \
   --max-trials 10 \
   --trials-per-iteration 3
@@ -117,8 +118,12 @@ uv run python -m puffer_llm_sweeper loop \
 
 Use `--skip-training` to test summary and decision plumbing without launching
 PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
-Validated search-space updates are applied to `runs/loop_config.yaml`; the tracked
-base config is not modified.
+Validated search-space updates are applied to the generated work config; the
+tracked base config is not modified.
+
+Pass `--run-dir` to isolate all loop artifacts for one experiment. When set, the
+loop writes Puffer logs, checkpoints, Puffer data, summary JSON, decision JSON, and
+the generated work config under that directory.
 
 The loop is sweep-first. Each iteration launches a bounded PufferLib sweep batch.
 `--trials-per-iteration` is the starting batch size. The LLM may return
