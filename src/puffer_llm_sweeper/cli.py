@@ -34,6 +34,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load and print the local config without importing or running PufferLib.",
     )
+
+    summarize_parser = subparsers.add_parser(
+        "summarize",
+        help="Parse PufferLib JSON logs into a normalized summary.",
+    )
+    summarize_parser.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=Path("runs/logs"),
+        help="Directory containing PufferLib JSON logs.",
+    )
+    summarize_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/summary.json"),
+        help="Path to write normalized summary JSON.",
+    )
     return parser
 
 
@@ -54,6 +71,18 @@ def main() -> int:
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
+
+    if args.command == "summarize":
+        from puffer_llm_sweeper.metrics import summarize_logs, write_summary
+
+        try:
+            summaries = summarize_logs(args.logs_dir)
+            write_summary(summaries, args.output)
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Wrote {len(summaries)} run summaries to {args.output}")
+        return 0
 
     parser.print_help()
     return 0

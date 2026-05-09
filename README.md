@@ -54,6 +54,16 @@ PYTHONPATH=src python -m puffer_llm_sweeper run --config configs/base.yaml
 
 Outputs are configured under ignored `runs/` subdirectories.
 
+## Metrics Summary
+
+Parse completed PufferLib JSON logs into a normalized summary:
+
+```bash
+PYTHONPATH=src python -m puffer_llm_sweeper summarize \
+  --logs-dir runs/logs \
+  --output runs/summary.json
+```
+
 ## Project Boundaries
 
 - CLI first; no web UI.
