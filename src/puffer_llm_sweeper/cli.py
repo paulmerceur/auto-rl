@@ -73,6 +73,29 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use OpenRouter instead of the default mock decision.",
     )
+
+    loop_parser = subparsers.add_parser(
+        "loop",
+        help="Run the constrained experiment-management loop.",
+    )
+    loop_parser.add_argument("--config", type=Path, required=True, help="Path to a YAML run config.")
+    loop_parser.add_argument("--logs-dir", type=Path, default=Path("runs/logs"))
+    loop_parser.add_argument("--summary", type=Path, default=Path("runs/summary.json"))
+    loop_parser.add_argument("--decision", type=Path, default=Path("runs/decision.json"))
+    loop_parser.add_argument("--max-iterations", type=int, default=1)
+    loop_parser.add_argument("--max-trials", type=int, default=1)
+    loop_parser.add_argument("--max-minutes", type=float, default=10.0)
+    loop_parser.add_argument("--target-reward", type=float, default=None)
+    loop_parser.add_argument("--no-improvement-iterations", type=int, default=3)
+    loop_parser.add_argument("--improvement-window", type=int, default=3)
+    loop_parser.add_argument("--improvement-epsilon", type=float, default=0.0)
+    loop_parser.add_argument("--max-failures", type=int, default=2)
+    loop_parser.add_argument("--live", action="store_true", help="Use OpenRouter instead of mock mode.")
+    loop_parser.add_argument(
+        "--skip-training",
+        action="store_true",
+        help="Skip PufferLib training; useful for parser/LLM smoke tests.",
+    )
     return parser
 
 
@@ -119,6 +142,40 @@ def main() -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         print(f"Wrote validated decision to {args.output}")
+        return 0
+
+    if args.command == "loop":
+        from puffer_llm_sweeper.loop import StopRules, run_loop
+
+        try:
+            result = run_loop(
+                config_path=args.config,
+                logs_dir=args.logs_dir,
+                summary_path=args.summary,
+                decision_path=args.decision,
+                rules=StopRules(
+                    max_iterations=args.max_iterations,
+                    max_trials=args.max_trials,
+                    max_minutes=args.max_minutes,
+                    target_reward=args.target_reward,
+                    no_improvement_iterations=args.no_improvement_iterations,
+                    improvement_window=args.improvement_window,
+                    improvement_epsilon=args.improvement_epsilon,
+                    max_failures=args.max_failures,
+                ),
+                live=args.live,
+                skip_training=args.skip_training,
+            )
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(
+            "Loop stopped: "
+            f"reason={result.stop_reason} "
+            f"iterations={result.iterations} "
+            f"trials={result.trials} "
+            f"best_reward={result.best_reward}"
+        )
         return 0
 
     parser.print_help()

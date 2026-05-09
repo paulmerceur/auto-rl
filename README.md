@@ -76,6 +76,20 @@ PYTHONPATH=src python -m puffer_llm_sweeper decide \
 
 Use `--live` only when you want to spend OpenRouter credits.
 
+## Loop MVP
+
+Run one conservative loop iteration in mock mode:
+
+```bash
+PYTHONPATH=src python -m puffer_llm_sweeper loop \
+  --config configs/base.yaml \
+  --max-iterations 1 \
+  --max-trials 1
+```
+
+Use `--skip-training` to test summary and decision plumbing without launching
+PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
+
 ## Project Boundaries
 
 - CLI first; no web UI.
