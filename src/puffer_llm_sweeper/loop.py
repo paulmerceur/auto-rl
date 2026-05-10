@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from threading import Thread
 from typing import Any
 
 import yaml
@@ -26,7 +27,6 @@ from puffer_llm_sweeper.metrics import (
     write_summary,
 )
 from puffer_llm_sweeper.openrouter import InvalidDecisionResponse, OpenRouterClient
-from puffer_llm_sweeper.runner import run_sweep
 
 
 MAX_TRIALS_PER_ITERATION = 10
@@ -530,30 +530,42 @@ def run_sweep_with_progress(
     max_phases: int,
 ) -> None:
     progress = ProgressPrinter()
-    error: list[BaseException] = []
-
-    def target() -> None:
-        try:
-            run_sweep(config_path, max_runs=max_runs, quiet=True)
-        except BaseException as exc:  # Propagate after restoring concise output.
-            error.append(exc)
-
-    worker = Thread(target=target, daemon=True)
-    worker.start()
+    command = [
+        sys.executable,
+        "-m",
+        "puffer_llm_sweeper",
+        "sweep",
+        "--config",
+        str(config_path),
+        "--max-runs",
+        str(max_runs),
+        "--quiet",
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
     try:
-        while worker.is_alive():
+        while process.poll() is None:
             completed = len(set(log_paths(logs_dir)) - before_logs)
             progress.update(format_sweep_progress(phase, max_phases, completed, max_runs, "running sweep"))
-            worker.join(timeout=0.5)
+            time.sleep(0.5)
+        stdout, stderr = process.communicate()
         completed = len(set(log_paths(logs_dir)) - before_logs)
-        status = "sweep failed" if error else "sweep complete"
+        status = "sweep failed" if process.returncode else "sweep complete"
         progress.update(format_sweep_progress(phase, max_phases, completed, max_runs, status))
     finally:
         progress.close()
 
-    if error:
-        raise error[0]
+    if process.returncode:
+        detail = (stderr or stdout or "").strip()
+        if detail:
+            detail = detail[-2000:]
+            raise RuntimeError(f"sweep subprocess failed with exit code {process.returncode}: {detail}")
+        raise RuntimeError(f"sweep subprocess failed with exit code {process.returncode}")
 
 
 def format_sweep_progress(

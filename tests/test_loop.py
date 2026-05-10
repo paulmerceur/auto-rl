@@ -326,7 +326,7 @@ class LoopTests(unittest.TestCase):
                     )
                 return 0
 
-            with patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep):
+            with patch("puffer_llm_sweeper.loop.run_sweep_with_progress", side_effect=fake_run_sweep):
                 result = run_loop(
                     config_path=config_path,
                     logs_dir=root / "ignored-logs",
@@ -383,7 +383,7 @@ class LoopTests(unittest.TestCase):
                     )
                 return 0
 
-            with patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep):
+            with patch("puffer_llm_sweeper.loop.run_sweep_with_progress", side_effect=fake_run_sweep):
                 result = run_loop(
                     config_path=config_path,
                     logs_dir=root / "ignored-logs",
@@ -457,7 +457,7 @@ class LoopTests(unittest.TestCase):
                     )
 
             with (
-                patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep),
+                patch("puffer_llm_sweeper.loop.run_sweep_with_progress", side_effect=fake_run_sweep),
                 patch("puffer_llm_sweeper.loop.OpenRouterClient", return_value=FakeClient()),
             ):
                 result = run_loop(
@@ -511,7 +511,7 @@ class LoopTests(unittest.TestCase):
                 return 0
 
             with (
-                patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep),
+                patch("puffer_llm_sweeper.loop.run_sweep_with_progress", side_effect=fake_run_sweep),
                 patch("puffer_llm_sweeper.loop.OpenRouterClient") as client_cls,
             ):
                 result = run_loop(
@@ -565,7 +565,7 @@ class LoopTests(unittest.TestCase):
                     )
 
             with (
-                patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep),
+                patch("puffer_llm_sweeper.loop.run_sweep_with_progress", side_effect=fake_run_sweep),
                 patch("puffer_llm_sweeper.loop.OpenRouterClient", return_value=FakeClient()),
             ):
                 result = run_loop(

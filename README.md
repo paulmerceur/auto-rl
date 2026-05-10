@@ -44,24 +44,42 @@ LLM calls. `.env` is ignored by Git.
 
 ## PufferLib Setup
 
-The default config targets PufferLib 4.0 `cartpole` sweep batches using
-GPU-oriented Puffer defaults. PufferLib 4.0 currently needs the GitHub source
-workflow rather than PyPI.
+The default config targets a PufferLib 4.0 Ocean environment using GPU-oriented
+Puffer defaults. PufferLib 4.0 currently needs the GitHub source workflow rather
+than PyPI.
 
-For GPU training, build PufferLib with CUDA support for the selected environment:
+Clone and install PufferLib once:
 
 ```bash
 git clone --branch 4.0 https://github.com/PufferAI/PufferLib.git .deps/PufferLib
-cd .deps/PufferLib
-bash build.sh cartpole
-cd ../..
 uv pip install -e .deps/PufferLib
 ```
 
-If you only need a CPU smoke test, build with `CC=gcc CXX=g++ bash build.sh
-cartpole --cpu`. The default config sets `slowly: true`, which uses PufferLib's
-PyTorch backend; it will use CUDA when the `_C` backend was built with GPU
-support and CPU otherwise.
+PufferLib's Ocean backend is compiled for one environment at a time. Build or
+check the active backend with this project's CLI:
+
+```bash
+uv run python -m puffer_llm_sweeper build-env cartpole
+uv run python -m puffer_llm_sweeper check-env --config configs/base.yaml
+```
+
+To switch environments, edit `env_name` in `configs/base.yaml`, then either build
+explicitly:
+
+```bash
+uv run python -m puffer_llm_sweeper build-env breakout
+```
+
+or let the run command build the configured env before training:
+
+```bash
+uv run python -m puffer_llm_sweeper loop --config configs/base.yaml --build-env
+```
+
+Use `--cpu` with `build-env` or `--build-env` for a CPU backend. Use `--arch sm_86`
+to override CUDA architecture; otherwise the CLI tries to detect it from PyTorch.
+The default config sets `slowly: true`, which uses PufferLib's PyTorch backend; it
+will use CUDA when `_C` was built with GPU support and CPU otherwise.
 
 Smoke-test this tool's config handling without launching training:
 

@@ -35,6 +35,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load and print the local config without importing or running PufferLib.",
     )
+    add_build_env_args(run_parser)
+
+    build_env_parser = subparsers.add_parser(
+        "build-env",
+        help="Build PufferLib's native backend for one Ocean environment.",
+    )
+    build_env_parser.add_argument("env_name", help="PufferLib Ocean environment name, e.g. cartpole.")
+    add_build_env_args(build_env_parser, include_build_flag=False, include_force_flag=False)
+
+    check_env_parser = subparsers.add_parser(
+        "check-env",
+        help="Print the currently compiled PufferLib native backend.",
+    )
+    check_env_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Optional config to compare against the compiled backend.",
+    )
 
     summarize_parser = subparsers.add_parser(
         "summarize",
@@ -70,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override Puffer sweep max_runs.",
     )
     sweep_parser.add_argument("--dry-run", action="store_true")
+    sweep_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress PufferLib dashboard output.",
+    )
+    add_build_env_args(sweep_parser)
 
     decide_parser = subparsers.add_parser(
         "decide",
@@ -128,6 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip PufferLib training; useful for parser/LLM smoke tests.",
     )
+    add_build_env_args(loop_parser)
     return parser
 
 
@@ -144,10 +170,51 @@ def main() -> int:
         from puffer_llm_sweeper.runner import run_training
 
         try:
+            maybe_build_backend_for_config(args)
             return run_training(args.config, dry_run=args.dry_run)
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
+
+    if args.command == "build-env":
+        from puffer_llm_sweeper.puffer_build import ensure_backend
+
+        try:
+            info = ensure_backend(
+                args.env_name,
+                source_dir=args.source_dir,
+                force=True,
+                cpu=args.cpu,
+                arch=args.arch,
+            )
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(format_backend_info(info), flush=True)
+        return 0
+
+    if args.command == "check-env":
+        from puffer_llm_sweeper.puffer_build import backend_info
+        from puffer_llm_sweeper.runner import load_run_config
+
+        try:
+            info = backend_info()
+            if info is None:
+                print("No compiled PufferLib backend could be imported.")
+                return 1
+            print(format_backend_info(info), flush=True)
+            if args.config:
+                config = load_run_config(args.config)
+                if config.env_name != info.env_name:
+                    print(
+                        f"Config env is {config.env_name}; run build-env {config.env_name} "
+                        "or pass --build-env."
+                    )
+                    return 1
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     if args.command == "summarize":
         from puffer_llm_sweeper.metrics import summarize_logs, write_summary
@@ -165,7 +232,13 @@ def main() -> int:
         from puffer_llm_sweeper.runner import run_sweep
 
         try:
-            return run_sweep(args.config, max_runs=args.max_runs, dry_run=args.dry_run)
+            maybe_build_backend_for_config(args)
+            return run_sweep(
+                args.config,
+                max_runs=args.max_runs,
+                dry_run=args.dry_run,
+                quiet=args.quiet,
+            )
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -189,6 +262,7 @@ def main() -> int:
         from puffer_llm_sweeper.loop import StopRules, run_loop
 
         try:
+            maybe_build_backend_for_config(args)
             run_dir = args.run_dir or default_loop_run_dir()
             result = run_loop(
                 config_path=args.config,
@@ -236,6 +310,63 @@ def main() -> int:
 def default_loop_run_dir() -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return Path("runs") / f"loop-{timestamp}"
+
+
+def add_build_env_args(
+    parser: argparse.ArgumentParser,
+    include_build_flag: bool = True,
+    include_force_flag: bool = True,
+) -> None:
+    if include_build_flag:
+        parser.add_argument(
+            "--build-env",
+            action="store_true",
+            help="Build the PufferLib native backend for the config env before running.",
+        )
+    if include_force_flag:
+        parser.add_argument(
+            "--force-build-env",
+            action="store_true",
+            help="Rebuild the PufferLib native backend even if it already matches.",
+        )
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        default=Path(".deps/PufferLib"),
+        help="Path to a local PufferLib source checkout.",
+    )
+    parser.add_argument(
+        "--arch",
+        default=None,
+        help="Optional CUDA architecture for NVCC, e.g. sm_86. Auto-detected by default.",
+    )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help="Build PufferLib's CPU backend instead of the CUDA backend.",
+    )
+
+
+def maybe_build_backend_for_config(args: argparse.Namespace) -> None:
+    if not getattr(args, "build_env", False) and not getattr(args, "force_build_env", False):
+        return
+    from puffer_llm_sweeper.puffer_build import ensure_backend_for_config
+
+    info = ensure_backend_for_config(
+        args.config,
+        source_dir=args.source_dir,
+        force=args.force_build_env,
+        cpu=args.cpu,
+        arch=args.arch,
+    )
+    print(format_backend_info(info), flush=True)
+
+
+def format_backend_info(info) -> str:
+    return (
+        f"PufferLib backend: env={info.env_name} "
+        f"gpu={info.gpu} precision_bytes={info.precision_bytes}"
+    )
 
 
 if __name__ == "__main__":
