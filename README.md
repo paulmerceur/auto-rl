@@ -113,7 +113,6 @@ Run one conservative loop iteration in mock mode:
 ```bash
 uv run python -m puffer_llm_sweeper loop \
   --config configs/base.yaml \
-  --run-dir runs/loop-smoke \
   --max-iterations 1 \
   --max-trials 10 \
   --trials-per-iteration 3
@@ -124,14 +123,16 @@ PufferLib. Use `--live` only when you want the loop to make OpenRouter calls.
 Validated search-space updates are applied to the generated work config; the
 tracked base config is not modified.
 
-Pass `--run-dir` to isolate all loop artifacts for one experiment. When set, the
-loop writes Puffer logs, checkpoints, Puffer data, summaries, decisions, reports,
-and the generated work config under that directory.
+The CLI creates a fresh `runs/loop-YYYYMMDD-HHMMSS/` directory by default so old
+logs do not contaminate the LLM's next decision. Pass `--run-dir` only when you
+want a specific artifact location. The loop writes Puffer logs, checkpoints,
+Puffer data, summaries, decisions, reports, and the generated work config under
+that directory.
 
 After a loop, inspect:
 
 ```text
-runs/loop-smoke/
+runs/loop-YYYYMMDD-HHMMSS/
   journal.jsonl                  # one compact record per loop iteration
   loop_report.json               # final answer: LLM activity, reward trend, problem flags
   performance.svg                # reward graph by iteration

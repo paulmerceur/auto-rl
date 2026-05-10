@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -188,6 +189,7 @@ def main() -> int:
         from puffer_llm_sweeper.loop import StopRules, run_loop
 
         try:
+            run_dir = args.run_dir or default_loop_run_dir()
             result = run_loop(
                 config_path=args.config,
                 logs_dir=args.logs_dir,
@@ -205,7 +207,7 @@ def main() -> int:
                     max_failures=args.max_failures,
                 ),
                 trials_per_iteration=args.trials_per_iteration,
-                run_dir=args.run_dir,
+                run_dir=run_dir,
                 live=args.live,
                 skip_training=args.skip_training,
             )
@@ -229,6 +231,11 @@ def main() -> int:
 
     parser.print_help()
     return 0
+
+
+def default_loop_run_dir() -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Path("runs") / f"loop-{timestamp}"
 
 
 if __name__ == "__main__":

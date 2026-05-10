@@ -20,7 +20,6 @@ MAX_SUGGESTED_TRIALS = 10
 
 INTEGER_SEARCH_KEYS = {
     "policy.hidden_size",
-    "policy.num_layers",
     "train.horizon",
     "train.minibatch_size",
     "vec.num_buffers",
@@ -29,7 +28,6 @@ INTEGER_SEARCH_KEYS = {
 
 REQUIRED_DISTRIBUTIONS_BY_KEY: dict[str, set[str]] = {
     "policy.hidden_size": {"uniform_pow2"},
-    "policy.num_layers": {"int_uniform"},
     "train.horizon": {"uniform_pow2"},
     "train.minibatch_size": {"uniform_pow2"},
     "vec.num_buffers": {"int_uniform"},
@@ -43,13 +41,12 @@ ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
     "train.clip_coef": (0.0, 1.0),
     "train.vf_coef": (0.0, 10.0),
     "train.max_grad_norm": (0.0, 10.0),
-    "train.total_timesteps": (1_024, 1_000_000_000),
+    "train.total_timesteps": (1_024, 50_000_000),
     "train.horizon": (8, 1_024),
     "train.minibatch_size": (4_096, 262_144),
     "vec.total_agents": (1, 16_384),
     "vec.num_buffers": (1, 16),
     "policy.hidden_size": (16, 2_048),
-    "policy.num_layers": (1, 16),
 }
 
 

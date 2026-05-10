@@ -64,7 +64,7 @@ class RunnerConfigTests(unittest.TestCase):
     def test_json_safe_encodes_bytes(self) -> None:
         self.assertEqual(_json_safe({"nccl_id": b"\x00\xff"}), {"nccl_id": "00ff"})
 
-    def test_base_sweep_uses_integer_safe_distributions(self) -> None:
+    def test_base_sweep_limits_active_parameters(self) -> None:
         class FakePufferl:
             @staticmethod
             def load_config(env_name: str) -> dict:
@@ -72,14 +72,6 @@ class RunnerConfigTests(unittest.TestCase):
                 self.env_name = env_name
                 return {
                     "sweep": {
-                        "policy": {
-                            "num_layers": {
-                                "distribution": "uniform",
-                                "min": 1,
-                                "max": 8,
-                                "scale": "auto",
-                            }
-                        },
                         "vec": {
                             "num_buffers": {
                                 "distribution": "uniform",
@@ -95,7 +87,8 @@ class RunnerConfigTests(unittest.TestCase):
         config = load_run_config(Path("configs/base.yaml"))
         args = build_puffer_args(config, FakePufferl)
 
-        self.assertEqual(args["sweep"]["policy"]["num_layers"]["distribution"], "int_uniform")
+        self.assertIn("hidden_size", args["sweep"]["sweep_only"])
+        self.assertNotIn("num_layers", args["sweep"]["sweep_only"])
         self.assertEqual(args["sweep"]["vec"]["num_buffers"]["distribution"], "int_uniform")
 
 

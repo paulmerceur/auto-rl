@@ -28,6 +28,7 @@ puffer:
     use_gpu: true
     metric: score
     downsample: 1
+    sweep_only: total_timesteps,horizon,minibatch_size,learning_rate,ent_coef,gamma,total_agents,num_buffers,hidden_size
     train:
       total_timesteps:
         distribution: log_normal
@@ -80,9 +81,4 @@ puffer:
         distribution: uniform_pow2
         min: 32
         max: 1024
-        scale: auto
-      num_layers:
-        distribution: int_uniform
-        min: 1
-        max: 8
         scale: auto

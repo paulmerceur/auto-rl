@@ -103,15 +103,15 @@ class DecisionTests(unittest.TestCase):
 
         self.assertEqual(decision.search_space_update["train.minibatch_size"].max, 65536)
 
-    def test_rejects_wrong_distribution_for_integer_key(self) -> None:
+    def test_rejects_policy_num_layers_updates(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(
                 {
-                    "action": "expand_search",
-                    "reason": "This would produce float layer counts.",
+                    "action": "continue",
+                    "reason": "Keep architecture depth fixed for v1.",
                     "search_space_update": {
                         "policy.num_layers": {
-                            "distribution": "uniform",
+                            "distribution": "int_uniform",
                             "min": 1,
                             "max": 8,
                             "scale": "auto",
@@ -121,16 +121,16 @@ class DecisionTests(unittest.TestCase):
                 }
             )
 
-    def test_accepts_required_distribution_for_integer_key(self) -> None:
+    def test_accepts_required_distribution_for_hidden_size(self) -> None:
         decision = parse_decision_json(
             {
                 "action": "expand_search",
-                "reason": "Try deeper policies.",
+                "reason": "Try wider policies.",
                 "search_space_update": {
-                    "policy.num_layers": {
-                        "distribution": "int_uniform",
-                        "min": 1,
-                        "max": 8,
+                    "policy.hidden_size": {
+                        "distribution": "uniform_pow2",
+                        "min": 32,
+                        "max": 512,
                         "scale": "auto",
                     }
                 },
@@ -138,7 +138,7 @@ class DecisionTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(decision.search_space_update["policy.num_layers"].distribution, "int_uniform")
+        self.assertEqual(decision.search_space_update["policy.hidden_size"].distribution, "uniform_pow2")
 
     def test_rejects_non_pow2_horizon_distribution(self) -> None:
         with self.assertRaises(ValueError):
