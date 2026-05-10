@@ -24,6 +24,13 @@ DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
 
 
+class InvalidDecisionResponse(ValueError):
+    def __init__(self, raw_content: str, error: str) -> None:
+        super().__init__(f"Invalid LLM decision: {error}")
+        self.raw_content = raw_content
+        self.error = error
+
+
 @dataclass(frozen=True)
 class OpenRouterConfig:
     api_key: str | None
@@ -54,6 +61,7 @@ class OpenRouterClient:
         summary: dict[str, Any],
         dry_run: bool = True,
         budget: dict[str, Any] | None = None,
+        current_search_space: dict[str, Any] | None = None,
     ) -> LlmDecision:
         if dry_run:
             return parse_decision_json(
@@ -79,7 +87,11 @@ class OpenRouterClient:
             },
             json={
                 "model": self.config.model,
-                "messages": build_decision_messages(summary, budget=budget),
+                "messages": build_decision_messages(
+                    summary,
+                    budget=budget,
+                    current_search_space=current_search_space,
+                ),
                 "temperature": 0.2,
                 "max_tokens": 700,
                 "response_format": {"type": "json_object"},
@@ -89,7 +101,10 @@ class OpenRouterClient:
         response.raise_for_status()
         payload = response.json()
         content = payload["choices"][0]["message"]["content"]
-        return parse_decision_json(content)
+        try:
+            return parse_decision_json(content)
+        except ValueError as exc:
+            raise InvalidDecisionResponse(content, str(exc)) from exc
 
 
 def load_summary(path: Path) -> dict[str, Any]:
@@ -103,6 +118,7 @@ def load_summary(path: Path) -> dict[str, Any]:
 def build_decision_messages(
     summary: dict[str, Any],
     budget: dict[str, Any] | None = None,
+    current_search_space: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     system_prompt = (
         "You are assisting with RL experiment management. Given completed PufferLib "
@@ -129,6 +145,15 @@ def build_decision_messages(
         f"{', '.join(sorted(INTEGER_SEARCH_KEYS))}.\n"
         "Specific distribution requirements:\n"
         f"{json.dumps(_distribution_requirements_payload(), indent=2, sort_keys=True)}\n"
+        "Current active search-space bounds:\n"
+        f"{json.dumps(current_search_space or {}, indent=2, sort_keys=True)}\n"
+        "Transition rules:\n"
+        "- narrow_search may only update keys already present in the current active "
+        "search-space, and every new min/max must stay inside the current min/max.\n"
+        "- expand_search is required when any new min/max moves outside the current "
+        "min/max, while still staying inside the absolute bounds.\n"
+        "- continue and stop should normally use an empty search_space_update.\n"
+        "- If unsure whether a change is valid, choose continue with an empty update.\n"
         "Example: "
         '{"action":"narrow_search","reason":"short explanation","suggested_trials":3,'
         '"search_space_update":{"train.learning_rate":{"distribution":"log_normal",'

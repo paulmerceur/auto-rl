@@ -42,9 +42,9 @@ ALLOWED_SEARCH_BOUNDS: dict[str, tuple[float, float]] = {
     "train.vf_coef": (0.0, 10.0),
     "train.max_grad_norm": (0.0, 10.0),
     "train.total_timesteps": (1_024, 50_000_000),
-    "train.horizon": (8, 1_024),
-    "train.minibatch_size": (4_096, 262_144),
-    "vec.total_agents": (1, 16_384),
+    "train.horizon": (64, 1_024),
+    "train.minibatch_size": (4_096, 65_536),
+    "vec.total_agents": (4_096, 16_384),
     "vec.num_buffers": (1, 16),
     "policy.hidden_size": (16, 2_048),
 }

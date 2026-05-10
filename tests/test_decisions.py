@@ -176,6 +176,44 @@ class DecisionTests(unittest.TestCase):
                 }
             )
 
+    def test_rejects_unsafe_ppo_geometry_bounds(self) -> None:
+        invalid_updates = [
+            {
+                "train.horizon": {
+                    "distribution": "uniform_pow2",
+                    "min": 32,
+                    "max": 128,
+                    "scale": "auto",
+                }
+            },
+            {
+                "train.minibatch_size": {
+                    "distribution": "uniform_pow2",
+                    "min": 4096,
+                    "max": 131072,
+                    "scale": "auto",
+                }
+            },
+            {
+                "vec.total_agents": {
+                    "distribution": "uniform_pow2",
+                    "min": 1024,
+                    "max": 4096,
+                    "scale": "auto",
+                }
+            },
+        ]
+        for update in invalid_updates:
+            with self.subTest(update=update), self.assertRaises(ValueError):
+                parse_decision_json(
+                    {
+                        "action": "expand_search",
+                        "reason": "This could create zero PPO minibatches.",
+                        "search_space_update": update,
+                        "notes": [],
+                    }
+                )
+
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(

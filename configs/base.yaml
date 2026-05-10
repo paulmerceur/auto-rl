@@ -37,7 +37,7 @@ puffer:
         scale: time
       horizon:
         distribution: uniform_pow2
-        min: 32
+        min: 64
         max: 256
         scale: auto
       minibatch_size:
@@ -68,7 +68,7 @@ puffer:
     vec:
       total_agents:
         distribution: uniform_pow2
-        min: 256
+        min: 4096
         max: 16384
         scale: auto
       num_buffers:

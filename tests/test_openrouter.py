@@ -57,7 +57,18 @@ class OpenRouterTests(unittest.TestCase):
         self.assertEqual(session.payload["response_format"], {"type": "json_object"})
 
     def test_prompt_includes_summary(self) -> None:
-        messages = build_decision_messages({"best_reward": 1.0}, budget={"trials_remaining": 10})
+        messages = build_decision_messages(
+            {"best_reward": 1.0},
+            budget={"trials_remaining": 10},
+            current_search_space={
+                "train.learning_rate": {
+                    "distribution": "log_normal",
+                    "min": 0.00001,
+                    "max": 0.1,
+                    "scale": 0.5,
+                }
+            },
+        )
 
         self.assertIn("valid JSON only", messages[0]["content"])
         self.assertIn('"best_reward": 1.0', messages[1]["content"])
@@ -68,6 +79,8 @@ class OpenRouterTests(unittest.TestCase):
         self.assertNotIn("policy.num_layers", messages[1]["content"])
         self.assertIn("Specific distribution requirements", messages[1]["content"])
         self.assertIn("Absolute search-space bounds", messages[1]["content"])
+        self.assertIn("Current active search-space bounds", messages[1]["content"])
+        self.assertIn("narrow_search may only update keys already present", messages[1]["content"])
 
 
 if __name__ == "__main__":

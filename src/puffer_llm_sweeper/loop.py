@@ -10,7 +10,12 @@ from typing import Any
 
 import yaml
 
-from puffer_llm_sweeper.decisions import DecisionAction, LlmDecision, decision_to_json
+from puffer_llm_sweeper.decisions import (
+    DecisionAction,
+    LlmDecision,
+    decision_to_json,
+    parse_decision_json,
+)
 from puffer_llm_sweeper.metrics import (
     RunSummary,
     log_paths,
@@ -18,7 +23,7 @@ from puffer_llm_sweeper.metrics import (
     summarize_logs,
     write_summary,
 )
-from puffer_llm_sweeper.openrouter import OpenRouterClient
+from puffer_llm_sweeper.openrouter import InvalidDecisionResponse, OpenRouterClient
 from puffer_llm_sweeper.runner import run_sweep
 
 
@@ -59,6 +64,7 @@ class LoopArtifacts:
     report_path: Path
     plot_path: Path
     iteration_summaries_dir: Path
+    rejected_decisions_dir: Path
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,7 @@ class IterationRecord:
     num_failures: int
     run_ids: list[str]
     decision: dict[str, Any] | None
+    decision_error: str | None
     training_error: str | None
     elapsed_minutes: float
     stop_reason: str | None
@@ -156,6 +163,15 @@ def run_loop(
         write_summary(iteration_summaries, iteration_summary_path)
         best_history.append(_best_reward(iteration_summaries))
 
+        post_training_stop = evaluate_stop_rules(
+            summaries=summaries,
+            best_history=best_history,
+            iteration=iteration,
+            trials=trials,
+            elapsed_minutes=(time.monotonic() - start_time) / 60,
+            rules=rules,
+        )
+
         if training_error:
             record = _iteration_record(
                 iteration=iteration,
@@ -165,6 +181,7 @@ def run_loop(
                 iteration_summaries=iteration_summaries,
                 best_history=best_history,
                 decision=None,
+                decision_error=None,
                 training_error=training_error,
                 elapsed_minutes=(time.monotonic() - start_time) / 60,
                 stop_reason="training_error",
@@ -185,6 +202,36 @@ def run_loop(
                 skip_training=skip_training,
             )
 
+        if post_training_stop and post_training_stop != "max_iterations":
+            record = _iteration_record(
+                iteration=iteration,
+                requested_trials=batch_trials,
+                completed_trials=completed_trials,
+                cumulative_trials=trials,
+                iteration_summaries=iteration_summaries,
+                best_history=best_history,
+                decision=None,
+                decision_error=None,
+                training_error=None,
+                elapsed_minutes=(time.monotonic() - start_time) / 60,
+                stop_reason=post_training_stop,
+                iteration_summary_path=iteration_summary_path,
+            )
+            records.append(record)
+            append_journal_record(artifacts.journal_path, record)
+            return _finish_loop(
+                iterations=iteration,
+                trials=trials,
+                stop_reason=post_training_stop,
+                best_history=best_history,
+                last_decision=last_decision,
+                records=records,
+                artifacts=artifacts,
+                rules=rules,
+                live=live,
+                skip_training=skip_training,
+            )
+
         summary_payload = json.loads(artifacts.summary_path.read_text(encoding="utf-8"))
         budget = {
             "max_total_trials": rules.max_trials,
@@ -193,17 +240,29 @@ def run_loop(
             "max_trials_per_iteration": MAX_TRIALS_PER_ITERATION,
             "default_trials_per_iteration": trials_per_iteration,
         }
-        last_decision = OpenRouterClient().propose_decision(
-            summary_payload,
-            dry_run=not live,
-            budget=budget,
-        )
+        decision_error = None
+        try:
+            last_decision = OpenRouterClient().propose_decision(
+                summary_payload,
+                dry_run=not live,
+                budget=budget,
+                current_search_space=extract_current_search_space(current_config_path),
+            )
+        except InvalidDecisionResponse as exc:
+            decision_error = str(exc)
+            write_rejected_raw_decision(artifacts, iteration, exc.raw_content, decision_error)
+            last_decision = fallback_decision(None, decision_error)
+        try:
+            apply_decision_to_config(current_config_path, last_decision, artifacts.work_config_path)
+        except ValueError as exc:
+            decision_error = str(exc)
+            write_rejected_decision(artifacts, iteration, last_decision, decision_error)
+            last_decision = fallback_decision(last_decision, decision_error)
         artifacts.decision_path.parent.mkdir(parents=True, exist_ok=True)
         artifacts.decision_path.write_text(decision_to_json(last_decision) + "\n", encoding="utf-8")
-        apply_decision_to_config(current_config_path, last_decision, artifacts.work_config_path)
         current_config_path = artifacts.work_config_path
 
-        post_stop = evaluate_stop_rules(
+        post_decision_stop = evaluate_stop_rules(
             summaries=summaries,
             best_history=best_history,
             iteration=iteration,
@@ -212,7 +271,7 @@ def run_loop(
             rules=rules,
         )
         if last_decision.action == "stop":
-            post_stop = post_stop or "llm_stop"
+            post_decision_stop = post_decision_stop or "llm_stop"
 
         record = _iteration_record(
             iteration=iteration,
@@ -222,19 +281,20 @@ def run_loop(
             iteration_summaries=iteration_summaries,
             best_history=best_history,
             decision=last_decision,
+            decision_error=decision_error,
             training_error=None,
             elapsed_minutes=(time.monotonic() - start_time) / 60,
-            stop_reason=post_stop,
+            stop_reason=post_decision_stop,
             iteration_summary_path=iteration_summary_path,
         )
         records.append(record)
         append_journal_record(artifacts.journal_path, record)
 
-        if post_stop:
+        if post_decision_stop:
             return _finish_loop(
                 iterations=iteration,
                 trials=trials,
-                stop_reason=post_stop,
+                stop_reason=post_decision_stop,
                 best_history=best_history,
                 last_decision=last_decision,
                 records=records,
@@ -283,6 +343,7 @@ def loop_artifacts(
         report_path=base_dir / "loop_report.json",
         plot_path=base_dir / "performance.svg",
         iteration_summaries_dir=base_dir / "iterations",
+        rejected_decisions_dir=base_dir / "rejected-decisions",
     )
 
 
@@ -331,6 +392,36 @@ def apply_decision_to_config(
     output_path.write_text(yaml.safe_dump(raw, sort_keys=True), encoding="utf-8")
 
 
+def extract_current_search_space(config_path: Path) -> dict[str, dict[str, Any]]:
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        return {}
+    puffer = raw.get("puffer")
+    if not isinstance(puffer, dict):
+        return {}
+    sweep = puffer.get("sweep")
+    if not isinstance(sweep, dict):
+        return {}
+
+    active_names = _active_sweep_names(sweep)
+    current: dict[str, dict[str, Any]] = {}
+    for section_name in ("train", "vec", "policy"):
+        section = sweep.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for param_name, value in section.items():
+            if active_names is not None and param_name not in active_names:
+                continue
+            if isinstance(value, dict) and {"distribution", "min", "max"}.issubset(value):
+                current[f"{section_name}.{param_name}"] = {
+                    "distribution": value.get("distribution"),
+                    "min": value.get("min"),
+                    "max": value.get("max"),
+                    "scale": value.get("scale"),
+                }
+    return current
+
+
 def evaluate_stop_rules(
     summaries: list[RunSummary],
     best_history: list[float | None],
@@ -366,6 +457,58 @@ def append_journal_record(journal_path: Path, record: IterationRecord) -> None:
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     with journal_path.open("a", encoding="utf-8") as journal_file:
         journal_file.write(json.dumps(asdict(record), sort_keys=True) + "\n")
+
+
+def write_rejected_decision(
+    artifacts: LoopArtifacts,
+    iteration: int,
+    decision: LlmDecision,
+    error: str,
+) -> Path:
+    path = artifacts.rejected_decisions_dir / f"iteration-{iteration:03d}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "decision": decision.model_dump(mode="json"),
+        "error": error,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def write_rejected_raw_decision(
+    artifacts: LoopArtifacts,
+    iteration: int,
+    raw_content: str,
+    error: str,
+) -> Path:
+    path = artifacts.rejected_decisions_dir / f"iteration-{iteration:03d}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "raw_content": raw_content,
+        "error": error,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def fallback_decision(rejected_decision: LlmDecision | None, error: str) -> LlmDecision:
+    reason = f"Rejected invalid LLM search-space update: {_short_error(error)}"
+    return parse_decision_json(
+        {
+            "action": "continue",
+            "reason": reason,
+            "suggested_trials": rejected_decision.suggested_trials if rejected_decision else 1,
+            "search_space_update": {},
+            "notes": ["rejected-live-decision"],
+        }
+    )
+
+
+def _short_error(error: str, max_length: int = 440) -> str:
+    normalized = " ".join(error.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 3] + "..."
 
 
 def _finish_loop(
@@ -448,6 +591,9 @@ def _get_nested_sweep_range(sweep: dict, dotted_name: str) -> dict[str, Any] | N
     parts = dotted_name.split(".")
     if len(parts) != 2:
         raise ValueError(f"Expected sweep update path like section.name, got: {dotted_name}")
+    active_names = _active_sweep_names(sweep)
+    if active_names is not None and parts[1] not in active_names:
+        return None
     section = sweep.get(parts[0])
     if not isinstance(section, dict):
         return None
@@ -466,11 +612,7 @@ def _validate_decision_transition(sweep: dict, decision: LlmDecision) -> None:
     for name, range_config in decision.search_space_update.items():
         current = _get_nested_sweep_range(sweep, name)
         if current is None:
-            if decision.action == DecisionAction.NARROW_SEARCH:
-                raise ValueError(f"Cannot narrow missing sweep key: {name}")
-            if decision.action == DecisionAction.EXPAND_SEARCH:
-                expanded = True
-            continue
+            raise ValueError(f"Cannot update missing or inactive sweep key: {name}")
         current_min = current.get("min")
         current_max = current.get("max")
         if not isinstance(current_min, int | float) or not isinstance(current_max, int | float):
@@ -490,6 +632,17 @@ def _validate_decision_transition(sweep: dict, decision: LlmDecision) -> None:
         raise ValueError("narrow_search must narrow at least one existing range.")
     if decision.action == DecisionAction.EXPAND_SEARCH and not expanded:
         raise ValueError("expand_search must expand at least one existing range.")
+
+
+def _active_sweep_names(sweep: dict) -> set[str] | None:
+    raw = sweep.get("sweep_only")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return {name.strip() for name in raw.split(",") if name.strip()}
+    if isinstance(raw, list):
+        return {str(name).strip() for name in raw if str(name).strip()}
+    return None
 
 
 def _apply_run_dir(raw: dict, run_dir: Path) -> None:
@@ -515,6 +668,9 @@ def _reset_loop_artifacts(artifacts: LoopArtifacts) -> None:
             path.unlink()
     for path in artifacts.iteration_summaries_dir.glob("iteration-*.json"):
         path.unlink()
+    if artifacts.rejected_decisions_dir.exists():
+        for path in artifacts.rejected_decisions_dir.glob("iteration-*.json"):
+            path.unlink()
 
 
 def _iteration_summary_path(artifacts: LoopArtifacts, iteration: int) -> Path:
@@ -529,6 +685,7 @@ def _iteration_record(
     iteration_summaries: list[RunSummary],
     best_history: list[float | None],
     decision: LlmDecision | None,
+    decision_error: str | None,
     training_error: str | None,
     elapsed_minutes: float,
     stop_reason: str | None,
@@ -544,6 +701,7 @@ def _iteration_record(
         num_failures=sum(1 for summary in iteration_summaries if summary.failure),
         run_ids=[summary.run_id for summary in iteration_summaries],
         decision=decision.model_dump(mode="json") if decision else None,
+        decision_error=decision_error,
         training_error=training_error,
         elapsed_minutes=elapsed_minutes,
         stop_reason=stop_reason,
@@ -618,6 +776,8 @@ def _problem_flags(result: LoopResult, records: list[IterationRecord]) -> list[s
         flags.append("no_completed_trials")
     if any(record.training_error for record in records):
         flags.append("training_errors")
+    if any(record.decision_error for record in records):
+        flags.append("invalid_llm_decisions")
     if any(record.num_failures for record in records):
         flags.append("failed_runs")
     if any(record.completed_trials > 0 and record.iteration_best_reward is None for record in records):
