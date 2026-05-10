@@ -82,6 +82,11 @@ class IterationRecord:
     decision: dict[str, Any] | None
     decision_error: str | None
     training_error: str | None
+    sweep_seconds: float
+    summary_seconds: float
+    llm_seconds: float
+    decision_seconds: float
+    phase_seconds: float
     elapsed_minutes: float
     stop_reason: str | None
     iteration_summary_path: str
@@ -117,6 +122,11 @@ def run_loop(
     current_config_path = initialize_work_config(config_path, artifacts.work_config_path, run_dir=run_dir)
 
     for iteration in range(1, rules.max_iterations + 1):
+        phase_start = time.monotonic()
+        sweep_seconds = 0.0
+        summary_seconds = 0.0
+        llm_seconds = 0.0
+        decision_seconds = 0.0
         remaining_trials = rules.max_trials - trials
         batch_trials = _next_batch_trials(
             default_trials=trials_per_iteration,
@@ -148,6 +158,7 @@ def run_loop(
         before_logs = set(log_paths(artifacts.logs_dir))
         training_error = None
         if not skip_training:
+            sweep_start = time.monotonic()
             try:
                 run_sweep_with_progress(
                     current_config_path,
@@ -159,11 +170,14 @@ def run_loop(
                 )
             except Exception as exc:  # Keep a report even when training fails.
                 training_error = f"{type(exc).__name__}: {exc}"
+            finally:
+                sweep_seconds = time.monotonic() - sweep_start
         else:
             progress = ProgressPrinter()
             progress.write_line(f"Phase {iteration}/{rules.max_iterations}: skipped training")
             progress.close()
 
+        summary_start = time.monotonic()
         after_logs = set(log_paths(artifacts.logs_dir))
         iteration_paths = sorted(after_logs - before_logs)
         iteration_summaries = summarize_log_paths(iteration_paths)
@@ -175,6 +189,7 @@ def run_loop(
         iteration_summary_path = _iteration_summary_path(artifacts, iteration)
         write_summary(iteration_summaries, iteration_summary_path)
         best_history.append(_best_reward(iteration_summaries))
+        summary_seconds = time.monotonic() - summary_start
 
         post_training_stop = evaluate_stop_rules(
             summaries=summaries,
@@ -196,12 +211,18 @@ def run_loop(
                 decision=None,
                 decision_error=None,
                 training_error=training_error,
+                sweep_seconds=sweep_seconds,
+                summary_seconds=summary_seconds,
+                llm_seconds=llm_seconds,
+                decision_seconds=decision_seconds,
+                phase_seconds=time.monotonic() - phase_start,
                 elapsed_minutes=(time.monotonic() - start_time) / 60,
                 stop_reason="training_error",
                 iteration_summary_path=iteration_summary_path,
             )
             records.append(record)
             append_journal_record(artifacts.journal_path, record)
+            print_timing_status(iteration, rules.max_iterations, record)
             return _finish_loop(
                 iterations=iteration,
                 trials=trials,
@@ -226,12 +247,18 @@ def run_loop(
                 decision=None,
                 decision_error=None,
                 training_error=None,
+                sweep_seconds=sweep_seconds,
+                summary_seconds=summary_seconds,
+                llm_seconds=llm_seconds,
+                decision_seconds=decision_seconds,
+                phase_seconds=time.monotonic() - phase_start,
                 elapsed_minutes=(time.monotonic() - start_time) / 60,
                 stop_reason=post_training_stop,
                 iteration_summary_path=iteration_summary_path,
             )
             records.append(record)
             append_journal_record(artifacts.journal_path, record)
+            print_timing_status(iteration, rules.max_iterations, record)
             return _finish_loop(
                 iterations=iteration,
                 trials=trials,
@@ -258,13 +285,16 @@ def run_loop(
             progress = ProgressPrinter()
             progress.write_line(f"Phase {iteration}/{rules.max_iterations}: asking LLM")
             try:
+                llm_start = time.monotonic()
                 last_decision = OpenRouterClient().propose_decision(
                     summary_payload,
                     dry_run=not live,
                     budget=budget,
                     current_search_space=extract_current_search_space(current_config_path),
                 )
+                llm_seconds = time.monotonic() - llm_start
             except Exception:
+                llm_seconds = time.monotonic() - llm_start
                 progress.close()
                 raise
             else:
@@ -285,6 +315,7 @@ def run_loop(
                 f"Phase {iteration}/{rules.max_iterations}: rejected malformed LLM response"
             )
             progress.close()
+        decision_start = time.monotonic()
         try:
             apply_decision_to_config(current_config_path, last_decision, artifacts.work_config_path)
         except ValueError as exc:
@@ -299,6 +330,7 @@ def run_loop(
         artifacts.decision_path.parent.mkdir(parents=True, exist_ok=True)
         artifacts.decision_path.write_text(decision_to_json(last_decision) + "\n", encoding="utf-8")
         current_config_path = artifacts.work_config_path
+        decision_seconds = time.monotonic() - decision_start
 
         post_decision_stop = evaluate_stop_rules(
             summaries=summaries,
@@ -321,12 +353,18 @@ def run_loop(
             decision=last_decision,
             decision_error=decision_error,
             training_error=None,
+            sweep_seconds=sweep_seconds,
+            summary_seconds=summary_seconds,
+            llm_seconds=llm_seconds,
+            decision_seconds=decision_seconds,
+            phase_seconds=time.monotonic() - phase_start,
             elapsed_minutes=(time.monotonic() - start_time) / 60,
             stop_reason=post_decision_stop,
             iteration_summary_path=iteration_summary_path,
         )
         records.append(record)
         append_journal_record(artifacts.journal_path, record)
+        print_timing_status(iteration, rules.max_iterations, record)
 
         if post_decision_stop:
             return _finish_loop(
@@ -592,6 +630,23 @@ def format_decision_status(phase: int, max_phases: int, decision: LlmDecision) -
     )
 
 
+def print_timing_status(phase: int, max_phases: int, record: IterationRecord) -> None:
+    progress = ProgressPrinter()
+    progress.write_line(format_timing_status(phase, max_phases, record))
+    progress.close()
+
+
+def format_timing_status(phase: int, max_phases: int, record: IterationRecord) -> str:
+    return (
+        f"Phase {phase}/{max_phases}: timings "
+        f"sweep={record.sweep_seconds:.1f}s "
+        f"summary={record.summary_seconds:.1f}s "
+        f"llm={record.llm_seconds:.1f}s "
+        f"decision={record.decision_seconds:.1f}s "
+        f"total={record.phase_seconds:.1f}s"
+    )
+
+
 def write_rejected_decision(
     artifacts: LoopArtifacts,
     iteration: int,
@@ -820,6 +875,11 @@ def _iteration_record(
     decision: LlmDecision | None,
     decision_error: str | None,
     training_error: str | None,
+    sweep_seconds: float,
+    summary_seconds: float,
+    llm_seconds: float,
+    decision_seconds: float,
+    phase_seconds: float,
     elapsed_minutes: float,
     stop_reason: str | None,
     iteration_summary_path: Path,
@@ -836,6 +896,11 @@ def _iteration_record(
         decision=decision.model_dump(mode="json") if decision else None,
         decision_error=decision_error,
         training_error=training_error,
+        sweep_seconds=sweep_seconds,
+        summary_seconds=summary_seconds,
+        llm_seconds=llm_seconds,
+        decision_seconds=decision_seconds,
+        phase_seconds=phase_seconds,
         elapsed_minutes=elapsed_minutes,
         stop_reason=stop_reason,
         iteration_summary_path=str(iteration_summary_path),

@@ -362,6 +362,10 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(journal[0]["completed_trials"], 2)
         self.assertEqual(report["result"]["completed_trials"], 2)
         self.assertFalse(report["llm"]["changed_trial_count"])
+        self.assertIn("phase_seconds", report["iterations"][0])
+        self.assertGreaterEqual(report["iterations"][0]["sweep_seconds"], 0.0)
+        self.assertGreaterEqual(report["iterations"][0]["summary_seconds"], 0.0)
+        self.assertGreaterEqual(report["iterations"][0]["llm_seconds"], 0.0)
         self.assertEqual(iteration_summary["num_runs"], 2)
         self.assertTrue(plot_exists)
 
