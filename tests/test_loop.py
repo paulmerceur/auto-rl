@@ -315,7 +315,7 @@ class LoopTests(unittest.TestCase):
             config_path = root / "base.yaml"
             config_path.write_text("env_name: target\n", encoding="utf-8")
 
-            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None, **_kwargs) -> int:
                 logs_dir = run_dir / "logs" / "target"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 for idx in range(max_runs or 0):
@@ -372,7 +372,7 @@ class LoopTests(unittest.TestCase):
             config_path = root / "base.yaml"
             config_path.write_text("env_name: target\n", encoding="utf-8")
 
-            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None, **_kwargs) -> int:
                 logs_dir = run_dir / "logs" / "target"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 for _ in range(max_runs or 0):
@@ -428,7 +428,7 @@ class LoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None, **_kwargs) -> int:
                 logs_dir = run_dir / "logs" / "target"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 (logs_dir / "run-1.json").write_text(
@@ -500,7 +500,7 @@ class LoopTests(unittest.TestCase):
             config_path = root / "base.yaml"
             config_path.write_text("env_name: target\n", encoding="utf-8")
 
-            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None, **_kwargs) -> int:
                 logs_dir = run_dir / "logs" / "target"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 for idx in range(max_runs or 0):
@@ -548,7 +548,7 @@ class LoopTests(unittest.TestCase):
             config_path = root / "base.yaml"
             config_path.write_text("env_name: target\n", encoding="utf-8")
 
-            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None, **_kwargs) -> int:
                 logs_dir = run_dir / "logs" / "target"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 (logs_dir / "run-1.json").write_text(

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 import yaml
@@ -147,9 +149,20 @@ def run_loop(
         training_error = None
         if not skip_training:
             try:
-                run_sweep(current_config_path, max_runs=batch_trials)
+                run_sweep_with_progress(
+                    current_config_path,
+                    max_runs=batch_trials,
+                    logs_dir=artifacts.logs_dir,
+                    before_logs=before_logs,
+                    phase=iteration,
+                    max_phases=rules.max_iterations,
+                )
             except Exception as exc:  # Keep a report even when training fails.
                 training_error = f"{type(exc).__name__}: {exc}"
+        else:
+            progress = ProgressPrinter()
+            progress.write_line(f"Phase {iteration}/{rules.max_iterations}: skipped training")
+            progress.close()
 
         after_logs = set(log_paths(artifacts.logs_dir))
         iteration_paths = sorted(after_logs - before_logs)
@@ -242,22 +255,47 @@ def run_loop(
         }
         decision_error = None
         try:
-            last_decision = OpenRouterClient().propose_decision(
-                summary_payload,
-                dry_run=not live,
-                budget=budget,
-                current_search_space=extract_current_search_space(current_config_path),
-            )
+            progress = ProgressPrinter()
+            progress.write_line(f"Phase {iteration}/{rules.max_iterations}: asking LLM")
+            try:
+                last_decision = OpenRouterClient().propose_decision(
+                    summary_payload,
+                    dry_run=not live,
+                    budget=budget,
+                    current_search_space=extract_current_search_space(current_config_path),
+                )
+            except Exception:
+                progress.close()
+                raise
+            else:
+                progress.write_line(
+                    format_decision_status(
+                        phase=iteration,
+                        max_phases=rules.max_iterations,
+                        decision=last_decision,
+                    )
+                )
+                progress.close()
         except InvalidDecisionResponse as exc:
             decision_error = str(exc)
             write_rejected_raw_decision(artifacts, iteration, exc.raw_content, decision_error)
             last_decision = fallback_decision(None, decision_error)
+            progress = ProgressPrinter()
+            progress.write_line(
+                f"Phase {iteration}/{rules.max_iterations}: rejected malformed LLM response"
+            )
+            progress.close()
         try:
             apply_decision_to_config(current_config_path, last_decision, artifacts.work_config_path)
         except ValueError as exc:
             decision_error = str(exc)
             write_rejected_decision(artifacts, iteration, last_decision, decision_error)
             last_decision = fallback_decision(last_decision, decision_error)
+            progress = ProgressPrinter()
+            progress.write_line(
+                f"Phase {iteration}/{rules.max_iterations}: rejected invalid LLM update"
+            )
+            progress.close()
         artifacts.decision_path.parent.mkdir(parents=True, exist_ok=True)
         artifacts.decision_path.write_text(decision_to_json(last_decision) + "\n", encoding="utf-8")
         current_config_path = artifacts.work_config_path
@@ -457,6 +495,89 @@ def append_journal_record(journal_path: Path, record: IterationRecord) -> None:
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     with journal_path.open("a", encoding="utf-8") as journal_file:
         journal_file.write(json.dumps(asdict(record), sort_keys=True) + "\n")
+
+
+class ProgressPrinter:
+    def __init__(self) -> None:
+        self._fd = os.dup(1)
+        self._last_was_inline = False
+
+    def update(self, line: str) -> None:
+        self._write("\r" + line)
+        self._last_was_inline = True
+
+    def write_line(self, line: str) -> None:
+        prefix = "\n" if self._last_was_inline else ""
+        self._write(prefix + line + "\n")
+        self._last_was_inline = False
+
+    def close(self) -> None:
+        if self._last_was_inline:
+            self._write("\n")
+            self._last_was_inline = False
+        os.close(self._fd)
+
+    def _write(self, text: str) -> None:
+        os.write(self._fd, text.encode("utf-8", errors="replace"))
+
+
+def run_sweep_with_progress(
+    config_path: Path,
+    max_runs: int,
+    logs_dir: Path,
+    before_logs: set[Path],
+    phase: int,
+    max_phases: int,
+) -> None:
+    progress = ProgressPrinter()
+    error: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            run_sweep(config_path, max_runs=max_runs, quiet=True)
+        except BaseException as exc:  # Propagate after restoring concise output.
+            error.append(exc)
+
+    worker = Thread(target=target, daemon=True)
+    worker.start()
+
+    try:
+        while worker.is_alive():
+            completed = len(set(log_paths(logs_dir)) - before_logs)
+            progress.update(format_sweep_progress(phase, max_phases, completed, max_runs, "running sweep"))
+            worker.join(timeout=0.5)
+        completed = len(set(log_paths(logs_dir)) - before_logs)
+        status = "sweep failed" if error else "sweep complete"
+        progress.update(format_sweep_progress(phase, max_phases, completed, max_runs, status))
+    finally:
+        progress.close()
+
+    if error:
+        raise error[0]
+
+
+def format_sweep_progress(
+    phase: int,
+    max_phases: int,
+    completed: int,
+    total: int,
+    status: str,
+) -> str:
+    total = max(total, 1)
+    completed = min(max(completed, 0), total)
+    width = 20
+    filled = int(width * completed / total)
+    bar = "#" * filled + "-" * (width - filled)
+    return f"Phase {phase}/{max_phases}: runs {completed}/{total} [{bar}] {status}"
+
+
+def format_decision_status(phase: int, max_phases: int, decision: LlmDecision) -> str:
+    updates = ", ".join(sorted(decision.search_space_update)) or "no search-space updates"
+    suggested = decision.suggested_trials if decision.suggested_trials is not None else "none"
+    return (
+        f"Phase {phase}/{max_phases}: LLM {decision.action} "
+        f"(suggested_trials={suggested}; {updates})"
+    )
 
 
 def write_rejected_decision(

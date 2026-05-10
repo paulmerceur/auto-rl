@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -190,7 +192,12 @@ def run_training(config_path: Path, dry_run: bool = False) -> int:
     return 0
 
 
-def run_sweep(config_path: Path, max_runs: int | None = None, dry_run: bool = False) -> int:
+def run_sweep(
+    config_path: Path,
+    max_runs: int | None = None,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> int:
     config = load_run_config(config_path)
 
     if dry_run:
@@ -203,24 +210,45 @@ def run_sweep(config_path: Path, max_runs: int | None = None, dry_run: bool = Fa
         print(json.dumps(preview, indent=2, sort_keys=True))
         return 0
 
-    try:
-        from pufferlib import pufferl
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "PufferLib is not installed. Install PufferLib 4.0 from the current "
-            "PufferTank/PufferLib source workflow before running sweeps."
-        ) from exc
+    with _maybe_suppress_output(quiet):
+        try:
+            from pufferlib import pufferl
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "PufferLib is not installed. Install PufferLib 4.0 from the current "
+                "PufferTank/PufferLib source workflow before running sweeps."
+            ) from exc
 
-    args = build_puffer_args(config, pufferl)
-    args.setdefault("sweep", {})
-    if max_runs is not None:
-        args["sweep"]["max_runs"] = max_runs
-    args["sweep"].setdefault("gpus", 1)
-    args.setdefault("train", {})
-    args["train"].setdefault("gpus", 1)
-    ensure_output_dirs(args)
-    pufferl.sweep(config.env_name, args=args)
+        args = build_puffer_args(config, pufferl)
+        args.setdefault("sweep", {})
+        if max_runs is not None:
+            args["sweep"]["max_runs"] = max_runs
+        args["sweep"].setdefault("gpus", 1)
+        args.setdefault("train", {})
+        args["train"].setdefault("gpus", 1)
+        ensure_output_dirs(args)
+        pufferl.sweep(config.env_name, args=args)
     return 0
+
+
+@contextmanager
+def _maybe_suppress_output(enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    try:
+        with Path(os.devnull).open("w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            yield
+    finally:
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
 
 
 def write_returned_logs(config: RunConfig, args: ConfigDict, logs: Any) -> Path:
