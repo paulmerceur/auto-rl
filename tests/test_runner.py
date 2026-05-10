@@ -90,6 +90,8 @@ class RunnerConfigTests(unittest.TestCase):
         self.assertIn("hidden_size", args["sweep"]["sweep_only"])
         self.assertNotIn("num_layers", args["sweep"]["sweep_only"])
         self.assertEqual(args["sweep"]["vec"]["num_buffers"]["distribution"], "int_uniform")
+        self.assertEqual(args["checkpoint_interval"], 200)
+        self.assertNotIn("checkpoint_interval", args["train"])
 
 
 if __name__ == "__main__":
