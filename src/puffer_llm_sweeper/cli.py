@@ -219,6 +219,12 @@ def main() -> int:
             f"trials={result.trials} "
             f"best_reward={result.best_reward}"
         )
+        if result.report_path:
+            print(f"Report: {result.report_path}")
+        if result.journal_path:
+            print(f"Journal: {result.journal_path}")
+        if result.plot_path:
+            print(f"Plot: {result.plot_path}")
         return 0
 
     parser.print_help()

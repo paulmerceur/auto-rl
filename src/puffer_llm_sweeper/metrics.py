@@ -34,10 +34,17 @@ def summarize_logs(logs_dir: Path) -> list[RunSummary]:
     if not logs_dir.exists():
         raise FileNotFoundError(f"Runs log directory does not exist: {logs_dir}")
 
-    summaries: list[RunSummary] = []
-    for path in sorted(logs_dir.rglob("*.json")):
-        summaries.append(parse_log(path))
-    return summaries
+    return summarize_log_paths(log_paths(logs_dir))
+
+
+def log_paths(logs_dir: Path) -> list[Path]:
+    if not logs_dir.exists():
+        return []
+    return sorted(logs_dir.rglob("*.json"))
+
+
+def summarize_log_paths(paths: list[Path]) -> list[RunSummary]:
+    return [parse_log(path) for path in sorted(paths)]
 
 
 def parse_log(path: Path) -> RunSummary:

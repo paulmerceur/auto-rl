@@ -103,7 +103,7 @@ class DecisionTests(unittest.TestCase):
 
         self.assertEqual(decision.search_space_update["train.minibatch_size"].max, 65536)
 
-    def test_rejects_float_distribution_for_integer_key(self) -> None:
+    def test_rejects_wrong_distribution_for_integer_key(self) -> None:
         with self.assertRaises(ValueError):
             parse_decision_json(
                 {
@@ -121,7 +121,7 @@ class DecisionTests(unittest.TestCase):
                 }
             )
 
-    def test_accepts_int_distribution_for_integer_key(self) -> None:
+    def test_accepts_required_distribution_for_integer_key(self) -> None:
         decision = parse_decision_json(
             {
                 "action": "expand_search",
@@ -139,6 +139,42 @@ class DecisionTests(unittest.TestCase):
         )
 
         self.assertEqual(decision.search_space_update["policy.num_layers"].distribution, "int_uniform")
+
+    def test_rejects_non_pow2_horizon_distribution(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_json(
+                {
+                    "action": "expand_search",
+                    "reason": "Horizon should stay power-of-two.",
+                    "search_space_update": {
+                        "train.horizon": {
+                            "distribution": "int_uniform",
+                            "min": 128,
+                            "max": 1024,
+                            "scale": "auto",
+                        }
+                    },
+                    "notes": [],
+                }
+            )
+
+    def test_rejects_too_small_minibatch(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_json(
+                {
+                    "action": "expand_search",
+                    "reason": "Too small for the configured Puffer sweep.",
+                    "search_space_update": {
+                        "train.minibatch_size": {
+                            "distribution": "uniform_pow2",
+                            "min": 256,
+                            "max": 4096,
+                            "scale": "auto",
+                        }
+                    },
+                    "notes": [],
+                }
+            )
 
     def test_rejects_unknown_parameter(self) -> None:
         with self.assertRaises(ValueError):

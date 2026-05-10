@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -150,7 +151,19 @@ class LoopTests(unittest.TestCase):
             root = Path(tmpdir)
             source_path = root / "base.yaml"
             output_path = root / "next.yaml"
-            source_path.write_text("env_name: target\npuffer:\n  sweep:\n    metric: score\n")
+            source_path.write_text(
+                "env_name: target\n"
+                "puffer:\n"
+                "  sweep:\n"
+                "    metric: score\n"
+                "    train:\n"
+                "      learning_rate:\n"
+                "        distribution: log_normal\n"
+                "        min: 0.00001\n"
+                "        max: 0.1\n"
+                "        scale: 0.5\n",
+                encoding="utf-8",
+            )
             decision = parse_decision_json(
                 {
                     "action": "narrow_search",
@@ -176,6 +189,42 @@ class LoopTests(unittest.TestCase):
         )
         self.assertEqual(updated["puffer"]["sweep"]["metric"], "score")
 
+    def test_rejects_invalid_narrowing_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source_path = root / "base.yaml"
+            output_path = root / "next.yaml"
+            source_path.write_text(
+                "env_name: target\n"
+                "puffer:\n"
+                "  sweep:\n"
+                "    train:\n"
+                "      learning_rate:\n"
+                "        distribution: log_normal\n"
+                "        min: 0.0001\n"
+                "        max: 0.001\n"
+                "        scale: 0.5\n",
+                encoding="utf-8",
+            )
+            decision = parse_decision_json(
+                {
+                    "action": "narrow_search",
+                    "reason": "This expands instead.",
+                    "search_space_update": {
+                        "train.learning_rate": {
+                            "distribution": "log_normal",
+                            "min": 0.00001,
+                            "max": 0.01,
+                            "scale": 0.5,
+                        }
+                    },
+                    "notes": [],
+                }
+            )
+
+            with self.assertRaises(ValueError):
+                apply_decision_to_config(source_path, decision, output_path)
+
     def test_next_batch_trials_clamps_llm_suggestion(self) -> None:
         decision = parse_decision_json(
             {
@@ -191,6 +240,107 @@ class LoopTests(unittest.TestCase):
             _next_batch_trials(default_trials=3, remaining_trials=4, last_decision=decision),
             4,
         )
+
+    def test_loop_counts_completed_trials_and_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "loop"
+            config_path = root / "base.yaml"
+            config_path.write_text("env_name: target\n", encoding="utf-8")
+
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+                logs_dir = run_dir / "logs" / "target"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                for idx in range(max_runs or 0):
+                    run_id = len(list(logs_dir.glob("*.json"))) + 1
+                    (logs_dir / f"run-{run_id}.json").write_text(
+                        json.dumps({"metrics": {"env/score": [float(run_id + idx)]}}),
+                        encoding="utf-8",
+                    )
+                return 0
+
+            with patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep):
+                result = run_loop(
+                    config_path=config_path,
+                    logs_dir=root / "ignored-logs",
+                    summary_path=root / "ignored-summary.json",
+                    decision_path=root / "ignored-decision.json",
+                    work_config_path=root / "ignored-config.yaml",
+                    run_dir=run_dir,
+                    rules=StopRules(
+                        max_iterations=1,
+                        max_trials=5,
+                        max_minutes=10,
+                        target_reward=None,
+                        no_improvement_iterations=3,
+                        improvement_window=3,
+                        improvement_epsilon=0.0,
+                        max_failures=2,
+                    ),
+                    trials_per_iteration=2,
+                )
+
+            journal = [
+                json.loads(line)
+                for line in result.journal_path.read_text(encoding="utf-8").splitlines()
+            ]
+            report = json.loads(result.report_path.read_text(encoding="utf-8"))
+            plot_exists = result.plot_path.exists()
+            iteration_summary = json.loads(
+                (run_dir / "iterations" / "iteration-001.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result.trials, 2)
+        self.assertEqual(journal[0]["requested_trials"], 2)
+        self.assertEqual(journal[0]["completed_trials"], 2)
+        self.assertEqual(report["result"]["completed_trials"], 2)
+        self.assertFalse(report["llm"]["changed_trial_count"])
+        self.assertEqual(iteration_summary["num_runs"], 2)
+        self.assertTrue(plot_exists)
+
+    def test_report_detects_llm_trial_count_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "loop"
+            config_path = root / "base.yaml"
+            config_path.write_text("env_name: target\n", encoding="utf-8")
+
+            def fake_run_sweep(_config_path: Path, max_runs: int | None = None) -> int:
+                logs_dir = run_dir / "logs" / "target"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                for _ in range(max_runs or 0):
+                    run_id = len(list(logs_dir.glob("*.json"))) + 1
+                    (logs_dir / f"run-{run_id}.json").write_text(
+                        json.dumps({"metrics": {"env/score": [float(run_id)]}}),
+                        encoding="utf-8",
+                    )
+                return 0
+
+            with patch("puffer_llm_sweeper.loop.run_sweep", side_effect=fake_run_sweep):
+                result = run_loop(
+                    config_path=config_path,
+                    logs_dir=root / "ignored-logs",
+                    summary_path=root / "ignored-summary.json",
+                    decision_path=root / "ignored-decision.json",
+                    work_config_path=root / "ignored-config.yaml",
+                    run_dir=run_dir,
+                    rules=StopRules(
+                        max_iterations=2,
+                        max_trials=5,
+                        max_minutes=10,
+                        target_reward=None,
+                        no_improvement_iterations=3,
+                        improvement_window=3,
+                        improvement_epsilon=0.0,
+                        max_failures=2,
+                    ),
+                    trials_per_iteration=2,
+                )
+
+            report = json.loads(result.report_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(report["llm"]["changed_trial_count"])
+        self.assertNotIn("llm_made_no_changes", report["problem_flags"])
 
 
 if __name__ == "__main__":

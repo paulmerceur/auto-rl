@@ -15,6 +15,7 @@ from puffer_llm_sweeper.decisions import (
     ALLOWED_SEARCH_BOUNDS,
     INTEGER_SEARCH_KEYS,
     LlmDecision,
+    REQUIRED_DISTRIBUTIONS_BY_KEY,
     parse_decision_json,
 )
 
@@ -126,6 +127,8 @@ def build_decision_messages(
         "logit_normal, min and max must be within [0, 1), and min must be less than max.\n"
         "Integer-only keys must use int_uniform or uniform_pow2. Integer-only keys are: "
         f"{', '.join(sorted(INTEGER_SEARCH_KEYS))}.\n"
+        "Specific distribution requirements:\n"
+        f"{json.dumps(_distribution_requirements_payload(), indent=2, sort_keys=True)}\n"
         "Example: "
         '{"action":"narrow_search","reason":"short explanation","suggested_trials":3,'
         '"search_space_update":{"train.learning_rate":{"distribution":"log_normal",'
@@ -143,4 +146,11 @@ def _bounds_payload() -> dict[str, dict[str, float]]:
     return {
         name: {"min": lower, "max": upper}
         for name, (lower, upper) in ALLOWED_SEARCH_BOUNDS.items()
+    }
+
+
+def _distribution_requirements_payload() -> dict[str, list[str]]:
+    return {
+        name: sorted(distributions)
+        for name, distributions in REQUIRED_DISTRIBUTIONS_BY_KEY.items()
     }

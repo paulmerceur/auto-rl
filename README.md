@@ -125,8 +125,26 @@ Validated search-space updates are applied to the generated work config; the
 tracked base config is not modified.
 
 Pass `--run-dir` to isolate all loop artifacts for one experiment. When set, the
-loop writes Puffer logs, checkpoints, Puffer data, summary JSON, decision JSON, and
-the generated work config under that directory.
+loop writes Puffer logs, checkpoints, Puffer data, summaries, decisions, reports,
+and the generated work config under that directory.
+
+After a loop, inspect:
+
+```text
+runs/loop-smoke/
+  journal.jsonl                  # one compact record per loop iteration
+  loop_report.json               # final answer: LLM activity, reward trend, problem flags
+  performance.svg                # reward graph by iteration
+  summary.json                   # cumulative parsed PufferLib run summary
+  decision.json                  # most recent validated LLM/mock decision
+  loop_config.yaml               # generated config used by the loop
+  iterations/iteration-001.json  # per-iteration run summaries
+  logs/                          # PufferLib JSON logs
+```
+
+Use `loop_report.json` to answer the v1 sanity questions: whether the LLM changed
+anything, whether rewards improved over iterations, and whether the loop saw
+failures, missing metrics, or training errors.
 
 The loop is sweep-first. Each iteration launches a bounded PufferLib sweep batch.
 `--trials-per-iteration` is the starting batch size. The LLM may return
